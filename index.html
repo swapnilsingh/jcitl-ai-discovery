@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101010" />
+    <title>JCiTL | Discovery brief</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <img src="public/logo-black.png" alt="JCiTL" class="logo" />
+          <span class="brand-rule"></span>
+          <span class="brand-label">DISCOVERY STUDIO</span>
+        </div>
+
+        <div class="sidebar-content">
+          <p class="eyebrow">A smarter first conversation</p>
+          <h1>Let’s find<br /><em>the signal.</em></h1>
+          <p class="sidebar-copy">A short, thoughtful intake helps us shape the right questions for your venture.</p>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="footer-mark">01 <span>/ 03</span></div>
+          <p><span>Elevating </span><strong>Value.</strong> <span>Leading with </span><strong>Integrity.</strong></p>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="mobile-brand"><img src="public/logo-black.png" alt="JCiTL" /></div>
+          <div class="step-label"><span class="status-dot"></span> YOUR DISCOVERY BRIEF</div>
+          <button class="text-button" type="button" aria-label="Save and exit">SAVE &amp; EXIT <span>↗</span></button>
+        </header>
+
+        <div class="progress-track" aria-label="Step 1 of 3"><span></span></div>
+
+        <section class="form-wrap">
+          <div class="section-intro">
+            <p class="eyebrow red">01 / ORIENT US</p>
+            <h2>Tell us what<br /><span>you’re building.</span></h2>
+            <p class="intro-copy">Start wherever feels most natural. Your answer becomes the context for a more useful conversation.</p>
+          </div>
+
+          <form id="discovery-form">
+            <div class="field-block">
+              <div class="field-heading">
+                <label for="venture-context">In a few sentences, what should we know about your venture?</label>
+                <span class="required">REQUIRED</span>
+              </div>
+              <div class="textarea-wrap">
+                <textarea id="venture-context" maxlength="600" placeholder="The problem we’re solving is..." required></textarea>
+                <span class="char-count"><b id="char-count">0</b> / 600</span>
+              </div>
+            </div>
+
+            <div class="field-block stage-block">
+              <div class="field-heading">
+                <span class="field-label">Where are you in the journey?</span>
+                <span class="required">REQUIRED</span>
+              </div>
+              <div class="stage-grid" role="radiogroup" aria-label="Venture stage">
+                <button class="stage-option selected" type="button" data-stage="Idea / pre-revenue"><span class="stage-number">01</span><strong>Idea /<br />pre-revenue</strong><span class="radio-dot"></span></button>
+                <button class="stage-option" type="button" data-stage="Early traction"><span class="stage-number">02</span><strong>Early<br />traction</strong><span class="radio-dot"></span></button>
+                <button class="stage-option" type="button" data-stage="Scaling"><span class="stage-number">03</span><strong>Scaling<br />with momentum</strong><span class="radio-dot"></span></button>
+                <button class="stage-option" type="button" data-stage="Exploring next move"><span class="stage-number">04</span><strong>Exploring<br />what’s next</strong><span class="radio-dot"></span></button>
+              </div>
+            </div>
+
+            <div class="field-block upload-block">
+              <div class="field-heading">
+                <span class="field-label">Have a deck or note to share?</span>
+                <span class="optional">OPTIONAL</span>
+              </div>
+              <label class="upload-zone" for="file-upload">
+                <span class="upload-icon">↥</span>
+                <span><strong id="upload-label">Drop a file here</strong><small>PDF, PPTX or DOCX · max 20MB</small></span>
+                <span class="browse">BROWSE <b>↗</b></span>
+                <input id="file-upload" type="file" accept=".pdf,.pptx,.docx" />
+              </label>
+            </div>
+
+            <div class="form-footer">
+              <span class="privacy-note"><span class="lock">⌑</span> Your responses are private and secure.</span>
+              <button class="primary-button" type="submit">CONTINUE <span>→</span></button>
+            </div>
+            <p class="form-message" id="form-message" role="status"></p>
+          </form>
+        </section>
+
+        <footer class="main-footer"><span>JCiTL / 2026</span><span>BUILT FOR BETTER CONVERSATIONS</span></footer>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
