@@ -280,8 +280,9 @@ async function startClerk() {
   renderAuthState({ user: window.Clerk.user, session: window.Clerk.session });
 }
 
-startClerk().catch(() => {
-  message.textContent = 'Authentication could not be loaded. Please refresh and try again.';
+startClerk().catch((error) => {
+  console.error('Clerk initialization failed', error);
+  message.textContent = 'Clerk rejected this app origin. Add http://localhost:3000 to Clerk Dashboard > Domains > Allowed origins, then refresh.';
 });
 
 contextField.addEventListener('input', () => {
