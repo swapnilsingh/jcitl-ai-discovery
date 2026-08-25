@@ -232,13 +232,6 @@ async function startClerk() {
   await window.Clerk.load({
     publishableKey: clerkKey,
     ui: { ClerkUI: window.__internal_ClerkUICtor },
-    signInFallbackRedirectUrl: redirectUrl,
-    signInForceRedirectUrl: redirectUrl,
-    signUpFallbackRedirectUrl: redirectUrl,
-    signUpForceRedirectUrl: redirectUrl,
-    signInUrl: redirectUrl,
-    signUpUrl: redirectUrl,
-    afterSignOutUrl: redirectUrl,
   });
   let userButtonMounted = false;
   const renderAuthState = ({ user }) => {
@@ -264,11 +257,7 @@ async function startClerk() {
       signInPanel.hidden = false;
       window.Clerk.mountSignIn(clerkSignIn, {
         routing: 'hash',
-        fallbackRedirectUrl: redirectUrl,
-        forceRedirectUrl: redirectUrl,
-        signUpUrl: redirectUrl,
-        signUpFallbackRedirectUrl: redirectUrl,
-        signUpForceRedirectUrl: redirectUrl,
+        withSignUp: true,
       });
     } else if (!signedIn) {
       signInPanel.hidden = false;
