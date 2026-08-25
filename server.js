@@ -229,6 +229,10 @@ app.post('/api/discovery-briefs', requireAuth, upload.single('file'), async (req
   }
 });
 
-app.listen(port, () => {
-  console.log(`JCiTL discovery app listening on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`JCiTL discovery app listening on http://localhost:${port}`);
+  });
+}
+
+export default app;
