@@ -28,6 +28,7 @@ const questionnaireBuilderTitle = document.querySelector('#questionnaire-builder
 const questionBuilderList = document.querySelector('#question-builder-list');
 const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
 const addQuestion = document.querySelector('#add-question');
+const unlockBriefButton = document.querySelector('#unlock-brief');
 const analystUsersForm = document.querySelector('#analyst-users-form');
 const analystUserIdInput = document.querySelector('#analyst-user-id');
 const analystUsersList = document.querySelector('#analyst-users-list');
@@ -42,6 +43,10 @@ const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.c
 let analystBriefs = [];
 let activeBriefFilter = 'all';
 let authRenderVersion = 0;
+let currentUserId = null;
+let activeLockedBriefId = null;
+let briefLockHeartbeatId = null;
+let lastAnalystToken = null;
 const ROLE_CACHE_KEY = 'jcitl_role';
 
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -52,15 +57,118 @@ function setProgress(step, label) {
   progressLabels.forEach((item) => item.classList.toggle('active', Number(item.dataset.progressStep) <= step));
 }
 
-async function renderAnalystView() {
+function isBriefLockedByCurrentAnalyst(brief) {
+  return Boolean(currentUserId && brief.lock_owner_user_id && brief.lock_owner_user_id === currentUserId);
+}
+
+function stopBriefLockHeartbeat() {
+  if (!briefLockHeartbeatId) return;
+  clearInterval(briefLockHeartbeatId);
+  briefLockHeartbeatId = null;
+}
+
+function updateUnlockBriefButton() {
+  if (!unlockBriefButton) return;
+  const selectedBriefId = Number(questionnaireBrief.value);
+  const selectedBrief = analystBriefs.find((brief) => brief.id === selectedBriefId);
+  unlockBriefButton.hidden = !selectedBrief || !isBriefLockedByCurrentAnalyst(selectedBrief);
+}
+
+function startBriefLockHeartbeat(briefId) {
+  stopBriefLockHeartbeat();
+  briefLockHeartbeatId = setInterval(async () => {
+    try {
+      const token = await window.Clerk.session?.getToken();
+      if (!token || !activeLockedBriefId) return;
+      await fetch(`/api/analyst/briefs/${briefId}/lock/heartbeat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Ignore heartbeat errors and rely on manual refresh and lock expiry.
+    }
+  }, 60000);
+}
+
+async function releaseAllBriefLocks() {
+  if (!lastAnalystToken) return;
+  try {
+    await fetch('/api/analyst/locks/release-all', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${lastAnalystToken}` },
+      keepalive: true,
+    });
+  } catch {
+    // Ignore logout-time network failures.
+  }
+  stopBriefLockHeartbeat();
+  activeLockedBriefId = null;
+}
+
+async function lockBriefForReview(briefId) {
   const token = await window.Clerk.session?.getToken();
+  if (!token) throw new Error('Sign in before reviewing briefs.');
+  const response = await fetch(`/api/analyst/briefs/${briefId}/lock`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    if (response.status === 409 && result.lock) {
+      const owner = result.lock.user_name || result.lock.user_email || result.lock.analyst_clerk_user_id;
+      throw new Error(`This brief is locked by ${owner}.`);
+    }
+    throw new Error(result.error || 'We could not lock this brief.');
+  }
+  activeLockedBriefId = Number(briefId);
+  startBriefLockHeartbeat(activeLockedBriefId);
+  return result;
+}
+
+async function unlockBrief(briefId, { silent = false } = {}) {
+  const token = await window.Clerk.session?.getToken();
+  if (!token) return false;
+  const response = await fetch(`/api/analyst/briefs/${briefId}/lock`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    if (!silent) analystMessage.textContent = result.error || 'Could not unlock this brief.';
+    return false;
+  }
+  if (Number(briefId) === activeLockedBriefId) {
+    activeLockedBriefId = null;
+    stopBriefLockHeartbeat();
+  }
+  if (!silent) analystMessage.textContent = 'Brief unlocked.';
+  return true;
+}
+
+async function renderAnalystView() {
+  const previouslySelectedBriefId = questionnaireBrief.value || (activeLockedBriefId ? String(activeLockedBriefId) : '');
+  const token = await window.Clerk.session?.getToken();
+  if (token) lastAnalystToken = token;
   const briefsResponse = await fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } });
   if (!briefsResponse.ok) throw new Error('Could not load analyst briefs.');
 
   const { briefs } = await briefsResponse.json();
   analystBriefs = briefs;
+  if (activeLockedBriefId) {
+    const activeBrief = analystBriefs.find((brief) => brief.id === activeLockedBriefId);
+    if (!activeBrief || !isBriefLockedByCurrentAnalyst(activeBrief)) {
+      activeLockedBriefId = null;
+      stopBriefLockHeartbeat();
+    }
+  }
   questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
+  if (previouslySelectedBriefId && questionnaireBrief.querySelector(`option[value="${previouslySelectedBriefId}"]`)) {
+    questionnaireBrief.value = previouslySelectedBriefId;
+    const selectedOption = questionnaireBrief.selectedOptions[0];
+    selectedBrief.textContent = selectedOption?.value ? `Selected brief: ${selectedOption.textContent}` : 'Select a brief above or use REVIEW on a submitted brief.';
+  }
   renderFilteredBriefs();
+  updateUnlockBriefButton();
 
   if (!analystUsersSection) return;
   analystUsersSection.hidden = false;
@@ -91,7 +199,12 @@ function renderFilteredBriefs() {
   briefList.innerHTML = filteredBriefs.length
     ? filteredBriefs.map((brief) => {
       const state = getBriefState(brief);
-      return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b></div></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}">REVIEW</button>${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
+      const lockedByCurrent = isBriefLockedByCurrentAnalyst(brief);
+      const isLocked = Boolean(brief.lock_owner_user_id);
+      const lockOwner = brief.lock_owner_name || brief.lock_owner_email || brief.lock_owner_user_id;
+      const lockLabel = lockedByCurrent ? 'LOCKED BY YOU' : isLocked ? `LOCKED BY ${escapeHtml(lockOwner)}` : 'UNLOCKED';
+      const reviewLabel = lockedByCurrent ? 'CONTINUE' : isLocked ? 'LOCKED' : 'REVIEW';
+      return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b><b class="brief-lock ${lockedByCurrent ? 'lock-mine' : isLocked ? 'lock-other' : 'lock-open'}">${lockLabel}</b></div></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}" ${isLocked && !lockedByCurrent ? 'disabled' : ''}>${reviewLabel}</button>${lockedByCurrent ? `<button class="refresh-button unlock-brief-inline" type="button" data-brief-id="${brief.id}">UNLOCK</button>` : ''}${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
     }).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';
 }
@@ -123,10 +236,27 @@ async function previewBriefFile(briefId, fileName, fileType) {
 briefList.addEventListener('click', async (event) => {
   const reviewButton = event.target.closest('.review-brief');
   const previewButton = event.target.closest('.preview-file');
+  const unlockButton = event.target.closest('.unlock-brief-inline');
+  if (unlockButton) {
+    const unlocked = await unlockBrief(unlockButton.dataset.briefId);
+    if (unlocked) {
+      if (questionnaireBrief.value === unlockButton.dataset.briefId) selectedBrief.textContent = 'Select a brief above or use REVIEW on a submitted brief.';
+      await renderAnalystView();
+    }
+    return;
+  }
   if (reviewButton) {
-    questionnaireBrief.value = reviewButton.dataset.briefId;
-    selectedBrief.textContent = `Selected brief: ${reviewButton.closest('.brief-item').querySelector('strong').textContent}`;
-    questionnaireBuilderTitle.focus();
+    try {
+      await lockBriefForReview(reviewButton.dataset.briefId);
+      questionnaireBrief.value = reviewButton.dataset.briefId;
+      selectedBrief.textContent = `Selected brief: ${reviewButton.closest('.brief-item').querySelector('strong').textContent}`;
+      questionnaireBuilderTitle.focus();
+      analystMessage.textContent = 'Brief locked for your review.';
+      await renderAnalystView();
+    } catch (error) {
+      analystMessage.textContent = error.message;
+    }
+    return;
   }
   if (previewButton) {
     try {
@@ -165,6 +295,7 @@ briefFilters.forEach((filter) => filter.addEventListener('click', () => {
 questionnaireBrief.addEventListener('change', () => {
   const option = questionnaireBrief.selectedOptions[0];
   selectedBrief.textContent = option?.value ? `Selected brief: ${option.textContent}` : 'Select a brief above or use REVIEW on a submitted brief.';
+  updateUnlockBriefButton();
 });
 
 function addQuestionRow() {
@@ -296,10 +427,12 @@ async function startClerk() {
       }
       window.Clerk.session.getToken().then(async (token) => {
         if (renderVersion !== authRenderVersion) return;
+        lastAnalystToken = token;
         const response = await fetch('/api/me', { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) throw new Error('Could not determine account access.');
-        const { isAnalyst } = await response.json();
+        const { isAnalyst, userId } = await response.json();
         if (renderVersion !== authRenderVersion) return;
+        currentUserId = userId;
         if (isAnalyst) {
           localStorage.setItem(ROLE_CACHE_KEY, 'analyst');
           protectedContent.hidden = true;
@@ -329,6 +462,13 @@ async function startClerk() {
         message.textContent = error.message;
       });
     } else if (!clerkSignIn.hasChildNodes()) {
+      if (localStorage.getItem(ROLE_CACHE_KEY) === 'analyst') {
+        releaseAllBriefLocks();
+      }
+      currentUserId = null;
+      lastAnalystToken = null;
+      activeLockedBriefId = null;
+      stopBriefLockHeartbeat();
       localStorage.removeItem(ROLE_CACHE_KEY);
       window.Clerk.mountSignIn(clerkSignIn, {
         routing: 'hash',
@@ -344,6 +484,12 @@ async function startClerk() {
 
 startClerk().catch(() => {
   authLoading.textContent = 'Secure sign-in could not be loaded.';
+});
+
+window.addEventListener('pagehide', () => {
+  if (localStorage.getItem(ROLE_CACHE_KEY) === 'analyst') {
+    releaseAllBriefLocks();
+  }
 });
 
 contextField.addEventListener('input', () => {
@@ -437,12 +583,28 @@ questionnaireBuilder.addEventListener('submit', async (event) => {
       : 'Questionnaire prepared and user notified.'
     : result.error;
   if (response.ok) {
-    questionnaireBuilder.reset();
-    questionBuilderList.innerHTML = '';
-    addQuestionRow();
-    selectedBrief.textContent = 'Select a brief above or use REVIEW on a submitted brief.';
+    if (submitStatus === 'prepared') {
+      await unlockBrief(questionnaireBrief.value, { silent: true });
+      questionnaireBuilder.reset();
+      questionBuilderList.innerHTML = '';
+      addQuestionRow();
+      selectedBrief.textContent = 'Select a brief above or use REVIEW on a submitted brief.';
+    }
     await renderAnalystView();
   }
+});
+
+unlockBriefButton?.addEventListener('click', async () => {
+  if (!questionnaireBrief.value) {
+    questionnaireBuilderMessage.textContent = 'Select and lock a brief first.';
+    return;
+  }
+  const unlocked = await unlockBrief(questionnaireBrief.value);
+  if (!unlocked) return;
+  selectedBrief.textContent = 'Select a brief above or use REVIEW on a submitted brief.';
+  questionnaireBrief.value = '';
+  updateUnlockBriefButton();
+  await renderAnalystView();
 });
 
 analystUsersForm?.addEventListener('submit', async (event) => {

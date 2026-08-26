@@ -47,11 +47,16 @@ h1 em { color: var(--red); font-style: normal; }
 .brief-item span, .brief-item small { color: #898989; font-size: 10px; }
 .brief-meta { display: grid; justify-items: end; gap: 7px; }
 .brief-status { font: 9px 'DM Mono', monospace; letter-spacing: .08em; }
+.brief-lock { font: 9px 'DM Mono', monospace; letter-spacing: .08em; }
 .status-new { color: var(--gold); }
 .status-questions { color: #73b8ff; }
 .status-answers { color: #75d39b; }
+.lock-open { color: #8f8f8f; }
+.lock-mine { color: #75d39b; }
+.lock-other { color: #ff9f7a; }
 .brief-item p { color: #d0d0d0; font-size: 12px; line-height: 1.6; margin: 14px 0; }
 .brief-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brief-actions .refresh-button:disabled { opacity: .45; cursor: not-allowed; }
 .no-attachment { color: #666; font: 9px 'DM Mono', monospace; letter-spacing: .08em; }
 .file-preview { border: 1px solid #363636; background: #111; padding: 14px; margin-top: 18px; }
 .file-preview iframe { display: block; width: 100%; height: 520px; border: 0; margin: 14px 0; background: white; }

@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS analyst_users (
 CREATE INDEX IF NOT EXISTS analyst_users_active_idx
   ON analyst_users (is_active);
 
+CREATE TABLE IF NOT EXISTS brief_locks (
+  brief_id BIGINT PRIMARY KEY REFERENCES discovery_briefs(id) ON DELETE CASCADE,
+  analyst_clerk_user_id TEXT NOT NULL,
+  locked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS brief_locks_analyst_idx
+  ON brief_locks (analyst_clerk_user_id);
+
+CREATE INDEX IF NOT EXISTS brief_locks_expires_idx
+  ON brief_locks (expires_at);
+
 CREATE TABLE IF NOT EXISTS questionnaires (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   brief_id BIGINT NOT NULL REFERENCES discovery_briefs(id) ON DELETE CASCADE,

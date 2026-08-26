@@ -18,6 +18,7 @@ if (!process.env.CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY || !proc
 const sql = neon(process.env.DATABASE_URL);
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 const analystRoleCache = new Set();
+const LOCK_MINUTES = 10;
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
   from: process.env.EMAIL_FROM,
@@ -116,7 +117,7 @@ async function sendEmail(to, subject, html) {
 }
 
 app.get('/api/me', requireAuth, async (request, response) => {
-  response.json({ isAnalyst: await isAnalyst(request.auth) });
+  response.json({ isAnalyst: await isAnalyst(request.auth), userId: request.auth.sub });
 });
 
 app.get('/api/analyst/users', requireAuth, requireAnalyst, async (_request, response) => {
@@ -205,8 +206,18 @@ app.get('/api/analyst/briefs', requireAuth, requireAnalyst, async (_request, res
   try {
     const briefs = await sql`
       SELECT b.id, b.clerk_user_id, b.user_name, b.user_email, b.company_name, b.context, b.stage, b.file_name, b.file_size, b.file_mime_type, b.review_status, b.created_at,
+        bl.analyst_clerk_user_id AS lock_owner_user_id, bl.locked_at, bl.expires_at,
+        au.user_name AS lock_owner_name, au.user_email AS lock_owner_email,
         q.id AS questionnaire_id, q.title AS questionnaire_title, q.status AS questionnaire_status, q.questions AS questionnaire_questions, q.answers AS questionnaire_answers
       FROM discovery_briefs b
+      LEFT JOIN LATERAL (
+        SELECT brief_id, analyst_clerk_user_id, locked_at, expires_at
+        FROM brief_locks
+        WHERE brief_id = b.id AND expires_at > now()
+        LIMIT 1
+      ) bl ON true
+      LEFT JOIN analyst_users au
+        ON au.clerk_user_id = bl.analyst_clerk_user_id
       LEFT JOIN LATERAL (
         SELECT id, title, status, questions, answers
         FROM questionnaires
@@ -220,6 +231,106 @@ app.get('/api/analyst/briefs', requireAuth, requireAnalyst, async (_request, res
   } catch (error) {
     console.error('Failed to load analyst briefs', error);
     return response.status(500).json({ error: 'We could not load discovery briefs.' });
+  }
+});
+
+app.post('/api/analyst/briefs/:id/lock', requireAuth, requireAnalyst, async (request, response) => {
+  const briefId = Number(request.params.id);
+  if (!Number.isInteger(briefId)) return response.status(400).json({ error: 'Invalid brief ID.' });
+
+  try {
+    const [brief] = await sql`SELECT id FROM discovery_briefs WHERE id = ${briefId}`;
+    if (!brief) return response.status(404).json({ error: 'Discovery brief not found.' });
+
+    const [lock] = await sql`
+      INSERT INTO brief_locks (brief_id, analyst_clerk_user_id, locked_at, expires_at, updated_at)
+      VALUES (${briefId}, ${request.auth.sub}, now(), now() + interval '${LOCK_MINUTES} minutes', now())
+      ON CONFLICT (brief_id)
+      DO UPDATE SET
+        analyst_clerk_user_id = EXCLUDED.analyst_clerk_user_id,
+        locked_at = now(),
+        expires_at = now() + interval '${LOCK_MINUTES} minutes',
+        updated_at = now()
+      WHERE brief_locks.expires_at <= now() OR brief_locks.analyst_clerk_user_id = ${request.auth.sub}
+      RETURNING brief_id, analyst_clerk_user_id, locked_at, expires_at
+    `;
+
+    if (!lock) {
+      const [activeLock] = await sql`
+        SELECT bl.analyst_clerk_user_id, au.user_name, au.user_email, bl.expires_at
+        FROM brief_locks bl
+        LEFT JOIN analyst_users au ON au.clerk_user_id = bl.analyst_clerk_user_id
+        WHERE bl.brief_id = ${briefId} AND bl.expires_at > now()
+        LIMIT 1
+      `;
+      return response.status(409).json({
+        error: 'This brief is currently locked by another analyst.',
+        lock: activeLock || null,
+      });
+    }
+
+    return response.json({
+      lock: {
+        briefId: lock.brief_id,
+        analystUserId: lock.analyst_clerk_user_id,
+        lockedAt: lock.locked_at,
+        expiresAt: lock.expires_at,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to lock discovery brief', error);
+    return response.status(500).json({ error: 'We could not lock this discovery brief.' });
+  }
+});
+
+app.post('/api/analyst/briefs/:id/lock/heartbeat', requireAuth, requireAnalyst, async (request, response) => {
+  const briefId = Number(request.params.id);
+  if (!Number.isInteger(briefId)) return response.status(400).json({ error: 'Invalid brief ID.' });
+
+  try {
+    const [lock] = await sql`
+      UPDATE brief_locks
+      SET expires_at = now() + interval '${LOCK_MINUTES} minutes', updated_at = now()
+      WHERE brief_id = ${briefId} AND analyst_clerk_user_id = ${request.auth.sub}
+      RETURNING brief_id, expires_at
+    `;
+    if (!lock) return response.status(409).json({ error: 'Your brief lock is no longer active.' });
+    return response.json({ lock: { briefId: lock.brief_id, expiresAt: lock.expires_at } });
+  } catch (error) {
+    console.error('Failed to refresh discovery brief lock', error);
+    return response.status(500).json({ error: 'We could not refresh this brief lock.' });
+  }
+});
+
+app.delete('/api/analyst/briefs/:id/lock', requireAuth, requireAnalyst, async (request, response) => {
+  const briefId = Number(request.params.id);
+  if (!Number.isInteger(briefId)) return response.status(400).json({ error: 'Invalid brief ID.' });
+
+  try {
+    const [unlocked] = await sql`
+      DELETE FROM brief_locks
+      WHERE brief_id = ${briefId} AND analyst_clerk_user_id = ${request.auth.sub}
+      RETURNING brief_id
+    `;
+    if (!unlocked) return response.status(404).json({ error: 'No active lock found for this brief.' });
+    return response.json({ message: 'Brief unlocked.' });
+  } catch (error) {
+    console.error('Failed to unlock discovery brief', error);
+    return response.status(500).json({ error: 'We could not unlock this discovery brief.' });
+  }
+});
+
+app.post('/api/analyst/locks/release-all', requireAuth, requireAnalyst, async (request, response) => {
+  try {
+    const deleted = await sql`
+      DELETE FROM brief_locks
+      WHERE analyst_clerk_user_id = ${request.auth.sub}
+      RETURNING brief_id
+    `;
+    return response.json({ releasedLocks: deleted.length });
+  } catch (error) {
+    console.error('Failed to release analyst locks', error);
+    return response.status(500).json({ error: 'We could not release analyst locks.' });
   }
 });
 
@@ -253,6 +364,15 @@ app.post('/api/analyst/questionnaires', requireAuth, requireAnalyst, async (requ
   try {
     const [brief] = await sql`SELECT clerk_user_id, user_email, user_name FROM discovery_briefs WHERE id = ${briefId}`;
     if (!brief) return response.status(404).json({ error: 'Discovery brief not found.' });
+    const [activeLock] = await sql`
+      SELECT analyst_clerk_user_id
+      FROM brief_locks
+      WHERE brief_id = ${briefId} AND expires_at > now()
+      LIMIT 1
+    `;
+    if (!activeLock || activeLock.analyst_clerk_user_id !== request.auth.sub) {
+      return response.status(409).json({ error: 'Lock this brief before drafting or sending a questionnaire.' });
+    }
     const [questionnaire] = await sql`
       INSERT INTO questionnaires (brief_id, clerk_user_id, title, questions, status)
       VALUES (${briefId}, ${brief.clerk_user_id}, ${title.trim()}, ${JSON.stringify(cleanQuestions)}::jsonb, ${status})
