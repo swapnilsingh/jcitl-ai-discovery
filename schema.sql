@@ -24,6 +24,18 @@ ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS review_status TEXT NOT NUL
 CREATE INDEX IF NOT EXISTS discovery_briefs_clerk_user_id_idx
   ON discovery_briefs (clerk_user_id);
 
+CREATE TABLE IF NOT EXISTS analyst_users (
+  clerk_user_id TEXT PRIMARY KEY,
+  user_name TEXT,
+  user_email TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by_clerk_user_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS analyst_users_active_idx
+  ON analyst_users (is_active);
+
 CREATE TABLE IF NOT EXISTS questionnaires (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   brief_id BIGINT NOT NULL REFERENCES discovery_briefs(id) ON DELETE CASCADE,

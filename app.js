@@ -28,6 +28,10 @@ const questionnaireBuilderTitle = document.querySelector('#questionnaire-builder
 const questionBuilderList = document.querySelector('#question-builder-list');
 const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
 const addQuestion = document.querySelector('#add-question');
+const analystUsersForm = document.querySelector('#analyst-users-form');
+const analystUserIdInput = document.querySelector('#analyst-user-id');
+const analystUsersList = document.querySelector('#analyst-users-list');
+const analystUsersMessage = document.querySelector('#analyst-users-message');
 const filePreview = document.querySelector('#file-preview');
 const briefFilters = document.querySelectorAll('[data-brief-filter]');
 const progressBar = document.querySelector('.progress-track span');
@@ -36,6 +40,8 @@ const stepLabelText = document.querySelector('#step-label-text');
 const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
 let analystBriefs = [];
 let activeBriefFilter = 'all';
+let authRenderVersion = 0;
+const ROLE_CACHE_KEY = 'jcitl_role';
 
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
@@ -47,11 +53,20 @@ function setProgress(step, label) {
 
 async function renderAnalystView() {
   const token = await window.Clerk.session?.getToken();
-  const response = await fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) throw new Error('Could not load analyst briefs.');
-  const { briefs } = await response.json();
+  const [briefsResponse, analystsResponse] = await Promise.all([
+    fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } }),
+    fetch('/api/analyst/users', { headers: { Authorization: `Bearer ${token}` } }),
+  ]);
+  if (!briefsResponse.ok) throw new Error('Could not load analyst briefs.');
+  if (!analystsResponse.ok) throw new Error('Could not load analyst users.');
+
+  const { briefs } = await briefsResponse.json();
+  const { analysts } = await analystsResponse.json();
   analystBriefs = briefs;
   questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
+  analystUsersList.innerHTML = analysts.length
+    ? analysts.map((analyst) => `<article class="analyst-user-item"><div><strong>${escapeHtml(analyst.user_name || 'Unnamed analyst')}</strong><span>${escapeHtml(analyst.user_email || analyst.clerk_user_id)}</span><small>${escapeHtml(analyst.clerk_user_id)}</small></div><button class="refresh-button remove-analyst" type="button" data-analyst-id="${escapeHtml(analyst.clerk_user_id)}">REMOVE</button></article>`).join('')
+    : '<p class="empty-state">No analysts assigned yet.</p>';
   renderFilteredBriefs();
 }
 
@@ -113,6 +128,25 @@ briefList.addEventListener('click', async (event) => {
   }
 });
 
+analystUsersList.addEventListener('click', async (event) => {
+  const removeButton = event.target.closest('.remove-analyst');
+  if (!removeButton) return;
+
+  analystUsersMessage.textContent = '';
+  try {
+    const token = await window.Clerk.session?.getToken();
+    const response = await fetch(`/api/analyst/users/${encodeURIComponent(removeButton.dataset.analystId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = await response.json();
+    analystUsersMessage.textContent = response.ok ? 'Analyst removed.' : result.error;
+    if (response.ok) await renderAnalystView();
+  } catch (error) {
+    analystUsersMessage.textContent = error.message;
+  }
+});
+
 briefFilters.forEach((filter) => filter.addEventListener('click', () => {
   activeBriefFilter = filter.dataset.briefFilter;
   briefFilters.forEach((item) => item.classList.toggle('active', item === filter));
@@ -147,7 +181,12 @@ function getBuilderQuestions() {
     prompt: row.querySelector('.question-prompt').value.trim(),
     type: row.querySelector('.question-type').value,
     required: true,
-    options: row.querySelector('.question-options').value.split(',').map((option) => option.trim()).filter(Boolean),
+    options: [...new Set(
+      row.querySelector('.question-options').value
+        .split(/[\n,]/)
+        .map((option) => option.trim())
+        .filter(Boolean),
+    )],
   }));
 }
 
@@ -234,6 +273,7 @@ async function startClerk() {
   });
 
   const renderAuthState = ({ user }) => {
+    const renderVersion = ++authRenderVersion;
     const signedIn = Boolean(user || window.Clerk.session || window.Clerk.isSignedIn);
     authLoading.hidden = true;
     signInPanel.hidden = signedIn;
@@ -246,20 +286,41 @@ async function startClerk() {
         window.Clerk.mountUserButton(clerkUserButton, { afterSignOutUrl: redirectUrl });
       }
       window.Clerk.session.getToken().then(async (token) => {
+        if (renderVersion !== authRenderVersion) return;
         const response = await fetch('/api/me', { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) throw new Error('Could not determine account access.');
         const { isAnalyst } = await response.json();
+        if (renderVersion !== authRenderVersion) return;
         if (isAnalyst) {
+          localStorage.setItem(ROLE_CACHE_KEY, 'analyst');
           protectedContent.hidden = true;
           analystContent.hidden = false;
           await renderAnalystView();
         } else {
+          localStorage.setItem(ROLE_CACHE_KEY, 'user');
           await renderUserDiscoveryState();
         }
       }).catch((error) => {
-        analystMessage.textContent = error.message;
+        if (renderVersion !== authRenderVersion) return;
+        const cachedRole = localStorage.getItem(ROLE_CACHE_KEY);
+        if (cachedRole === 'analyst') {
+          protectedContent.hidden = true;
+          analystContent.hidden = false;
+          renderAnalystView().catch(() => {
+            analystMessage.textContent = 'Could not refresh analyst briefs. Please retry.';
+          });
+          return;
+        }
+        if (cachedRole === 'user') {
+          renderUserDiscoveryState().catch(() => {
+            message.textContent = 'Could not refresh your discovery status. Please retry.';
+          });
+          return;
+        }
+        message.textContent = error.message;
       });
     } else if (!clerkSignIn.hasChildNodes()) {
+      localStorage.removeItem(ROLE_CACHE_KEY);
       window.Clerk.mountSignIn(clerkSignIn, {
         routing: 'hash',
         fallbackRedirectUrl: redirectUrl,
@@ -346,6 +407,8 @@ addQuestionRow();
 
 questionnaireBuilder.addEventListener('submit', async (event) => {
   event.preventDefault();
+  questionnaireBuilderMessage.textContent = '';
+  const submitStatus = event.submitter?.dataset.status || 'prepared';
   const questions = getBuilderQuestions();
   const invalidChoiceQuestion = questions.find((question) => ['multiple-choice', 'multi-select'].includes(question.type) && question.options.length < 2);
   if (invalidChoiceQuestion) {
@@ -356,11 +419,42 @@ questionnaireBuilder.addEventListener('submit', async (event) => {
   const response = await fetch('/api/analyst/questionnaires', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ briefId: questionnaireBrief.value, title: questionnaireBuilderTitle.value, questions, status: 'prepared' }),
+    body: JSON.stringify({ briefId: questionnaireBrief.value, title: questionnaireBuilderTitle.value, questions, status: submitStatus }),
   });
   const result = await response.json();
-  questionnaireBuilderMessage.textContent = response.ok ? 'Questionnaire prepared and user notified.' : result.error;
-  if (response.ok) await renderAnalystView();
+  questionnaireBuilderMessage.textContent = response.ok
+    ? submitStatus === 'draft'
+      ? 'Draft questionnaire saved.'
+      : 'Questionnaire prepared and user notified.'
+    : result.error;
+  if (response.ok) {
+    questionnaireBuilder.reset();
+    questionBuilderList.innerHTML = '';
+    addQuestionRow();
+    selectedBrief.textContent = 'Select a brief above or use REVIEW on a submitted brief.';
+    await renderAnalystView();
+  }
+});
+
+analystUsersForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  analystUsersMessage.textContent = '';
+  try {
+    const token = await window.Clerk.session?.getToken();
+    const response = await fetch('/api/analyst/users', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clerkUserId: analystUserIdInput.value.trim() }),
+    });
+    const result = await response.json();
+    analystUsersMessage.textContent = response.ok ? 'Analyst assigned.' : result.error;
+    if (response.ok) {
+      analystUsersForm.reset();
+      await renderAnalystView();
+    }
+  } catch (error) {
+    analystUsersMessage.textContent = error.message;
+  }
 });
 
 questionnaireForm.addEventListener('submit', async (event) => {

@@ -150,8 +150,20 @@
               <input id="questionnaire-builder-title" maxlength="200" placeholder="Questionnaire title" required />
               <div id="question-builder-list"></div>
               <button class="refresh-button" id="add-question" type="button">ADD QUESTION <span>+</span></button>
-              <button class="primary-button" type="submit">SEND QUESTIONNAIRE <span>→</span></button>
+              <div class="builder-actions">
+                <button class="refresh-button" type="submit" data-status="draft">SAVE DRAFT</button>
+                <button class="primary-button" type="submit" data-status="prepared">SEND QUESTIONNAIRE <span>→</span></button>
+              </div>
             </form>
+          </section>
+          <section class="analyst-section">
+            <div class="analyst-section-heading"><span class="field-label">Manage analysts</span><span class="optional">ACCESS CONTROL</span></div>
+            <form class="analyst-users-form" id="analyst-users-form">
+              <input id="analyst-user-id" placeholder="Clerk user ID (e.g. user_2xxxxxxxx)" required />
+              <button class="refresh-button" type="submit">ADD ANALYST</button>
+            </form>
+            <div class="analyst-users-list" id="analyst-users-list"></div>
+            <p class="form-message" id="analyst-users-message" role="status"></p>
           </section>
           <p class="form-message" id="questionnaire-builder-message" role="status"></p>
           <p class="form-message" id="analyst-message" role="status"></p>

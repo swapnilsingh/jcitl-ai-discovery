@@ -17,7 +17,6 @@ if (!process.env.CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY || !proc
 
 const sql = neon(process.env.DATABASE_URL);
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
-const analystUserIds = new Set((process.env.ANALYST_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean));
 const analystRoleCache = new Set();
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
@@ -58,23 +57,49 @@ async function requireAuth(request, response, next) {
 }
 
 async function isAnalyst(auth) {
-  const metadata = auth.public_metadata || auth.publicMetadata || auth.metadata || auth.sessionClaims?.metadata || {};
-  if (analystUserIds.has(auth.sub) || metadata.role === 'analyst') {
-    analystRoleCache.add(auth.sub);
-    return true;
-  }
   if (analystRoleCache.has(auth.sub)) return true;
 
   try {
+    const [assignedAnalyst] = await sql`
+      SELECT clerk_user_id
+      FROM analyst_users
+      WHERE clerk_user_id = ${auth.sub} AND is_active = true
+      LIMIT 1
+    `;
+    if (assignedAnalyst) {
+      analystRoleCache.add(auth.sub);
+      return true;
+    }
+  } catch (error) {
+    console.warn('Analyst role database lookup failed', error?.message || error);
+  }
+
+  try {
+    const metadata = auth.public_metadata || auth.publicMetadata || auth.metadata || auth.sessionClaims?.metadata || {};
     const user = await clerkClient.users.getUser(auth.sub);
-    const hasAnalystRole = user.publicMetadata?.role === 'analyst' || user.privateMetadata?.role === 'analyst';
-    if (hasAnalystRole) analystRoleCache.add(auth.sub);
+    const hasAnalystRole = metadata.role === 'analyst' || user.publicMetadata?.role === 'analyst' || user.privateMetadata?.role === 'analyst';
+    if (hasAnalystRole) {
+      analystRoleCache.add(auth.sub);
+      const userName = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
+      const userEmail = user.primaryEmailAddress?.emailAddress || null;
+      await sql`
+        INSERT INTO analyst_users (clerk_user_id, user_name, user_email, is_active)
+        VALUES (${auth.sub}, ${userName}, ${userEmail}, true)
+        ON CONFLICT (clerk_user_id)
+        DO UPDATE SET user_name = EXCLUDED.user_name, user_email = EXCLUDED.user_email, is_active = true
+      `;
+    }
     return hasAnalystRole;
   } catch (error) {
     if (analystRoleCache.has(auth.sub)) return true;
     console.warn('Analyst role lookup failed', error?.message || error);
     return false;
   }
+}
+
+async function requireAnalyst(request, response, next) {
+  if (!(await isAnalyst(request.auth))) return response.status(403).json({ error: 'Analyst access required.' });
+  return next();
 }
 
 async function sendEmail(to, subject, html) {
@@ -92,6 +117,64 @@ async function sendEmail(to, subject, html) {
 
 app.get('/api/me', requireAuth, async (request, response) => {
   response.json({ isAnalyst: await isAnalyst(request.auth) });
+});
+
+app.get('/api/analyst/users', requireAuth, requireAnalyst, async (_request, response) => {
+  try {
+    const analysts = await sql`
+      SELECT clerk_user_id, user_name, user_email, is_active, assigned_at, assigned_by_clerk_user_id
+      FROM analyst_users
+      WHERE is_active = true
+      ORDER BY assigned_at DESC
+    `;
+    response.json({ analysts });
+  } catch (error) {
+    console.error('Failed to load analyst users', error);
+    response.status(500).json({ error: 'We could not load analyst users.' });
+  }
+});
+
+app.post('/api/analyst/users', requireAuth, requireAnalyst, async (request, response) => {
+  const { clerkUserId } = request.body;
+  if (typeof clerkUserId !== 'string' || !clerkUserId.trim()) return response.status(400).json({ error: 'Provide a valid Clerk user ID.' });
+
+  try {
+    const user = await clerkClient.users.getUser(clerkUserId.trim());
+    const userName = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
+    const userEmail = user.primaryEmailAddress?.emailAddress || null;
+    const [analyst] = await sql`
+      INSERT INTO analyst_users (clerk_user_id, user_name, user_email, is_active, assigned_by_clerk_user_id)
+      VALUES (${user.id}, ${userName}, ${userEmail}, true, ${request.auth.sub})
+      ON CONFLICT (clerk_user_id)
+      DO UPDATE SET user_name = EXCLUDED.user_name, user_email = EXCLUDED.user_email, is_active = true, assigned_by_clerk_user_id = EXCLUDED.assigned_by_clerk_user_id
+      RETURNING clerk_user_id, user_name, user_email, is_active, assigned_at, assigned_by_clerk_user_id
+    `;
+    analystRoleCache.add(user.id);
+    response.status(201).json({ analyst });
+  } catch (error) {
+    console.error('Failed to assign analyst user', error);
+    response.status(500).json({ error: 'We could not assign this analyst user.' });
+  }
+});
+
+app.delete('/api/analyst/users/:clerkUserId', requireAuth, requireAnalyst, async (request, response) => {
+  const { clerkUserId } = request.params;
+  if (!clerkUserId) return response.status(400).json({ error: 'Provide a valid Clerk user ID.' });
+
+  try {
+    const [updated] = await sql`
+      UPDATE analyst_users
+      SET is_active = false
+      WHERE clerk_user_id = ${clerkUserId}
+      RETURNING clerk_user_id
+    `;
+    if (!updated) return response.status(404).json({ error: 'Analyst user not found.' });
+    analystRoleCache.delete(clerkUserId);
+    response.json({ message: 'Analyst access removed.' });
+  } catch (error) {
+    console.error('Failed to remove analyst user', error);
+    response.status(500).json({ error: 'We could not remove this analyst user.' });
+  }
 });
 
 app.get('/api/discovery-status', requireAuth, async (request, response) => {
@@ -117,10 +200,7 @@ app.get('/api/discovery-status', requireAuth, async (request, response) => {
   }
 });
 
-app.get('/api/analyst/briefs', requireAuth, async (request, response) => {
-  if (!(await isAnalyst(request.auth))) {
-    return response.status(403).json({ error: 'Analyst access required.' });
-  }
+app.get('/api/analyst/briefs', requireAuth, requireAnalyst, async (_request, response) => {
 
   try {
     const briefs = await sql`
@@ -143,8 +223,7 @@ app.get('/api/analyst/briefs', requireAuth, async (request, response) => {
   }
 });
 
-app.get('/api/analyst/briefs/:id/file', requireAuth, async (request, response) => {
-  if (!(await isAnalyst(request.auth))) return response.status(403).json({ error: 'Analyst access required.' });
+app.get('/api/analyst/briefs/:id/file', requireAuth, requireAnalyst, async (request, response) => {
   const [file] = await sql`
     SELECT file_name, file_mime_type, file_data
     FROM discovery_briefs
@@ -154,8 +233,7 @@ app.get('/api/analyst/briefs/:id/file', requireAuth, async (request, response) =
   response.type(file.file_mime_type).set('Content-Disposition', `inline; filename="${file.file_name.replaceAll('"', '')}"`).send(file.file_data);
 });
 
-app.post('/api/analyst/questionnaires', requireAuth, async (request, response) => {
-  if (!(await isAnalyst(request.auth))) return response.status(403).json({ error: 'Analyst access required.' });
+app.post('/api/analyst/questionnaires', requireAuth, requireAnalyst, async (request, response) => {
   const { briefId, title, questions, status = 'prepared' } = request.body;
   if (!Number.isInteger(Number(briefId)) || typeof title !== 'string' || !title.trim() || !Array.isArray(questions) || questions.length === 0 || questions.length > 30) {
     return response.status(400).json({ error: 'Add a title and at least one question.' });
@@ -169,7 +247,7 @@ app.post('/api/analyst/questionnaires', requireAuth, async (request, response) =
     required: question.required !== false,
   }));
   if (cleanQuestions.some((question) => !question.prompt || question.prompt.length > 500 || (['multiple-choice', 'multi-select'].includes(question.type) && question.options.length < 2))) {
-    return response.status(400).json({ error: 'Each question must contain up to 500 characters.' });
+    return response.status(400).json({ error: 'Each question needs a prompt up to 500 characters, and choice questions need at least two options.' });
   }
 
   try {
