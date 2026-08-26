@@ -101,11 +101,12 @@ async function requireAnalyst(request, response, next) {
   return next();
 }
 
-async function sendEmail({ to, from, replyTo, subject, html }) {
+async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
   const recipients = Array.isArray(to)
     ? [...new Set(to.map((item) => String(item || '').trim()).filter(Boolean))]
     : [String(to || '').trim()].filter(Boolean);
   const sender = String(from || '').trim();
+  const fallbackSender = String(fallbackFrom || '').trim();
   const replyToAddress = String(replyTo || '').trim();
 
   if (!emailConfig.apiKey || !sender || recipients.length === 0) {
@@ -115,11 +116,19 @@ async function sendEmail({ to, from, replyTo, subject, html }) {
   const payload = { from: sender, to: recipients, subject, html };
   if (replyToAddress) payload.reply_to = replyToAddress;
 
-  const response = await fetch('https://api.resend.com/emails', {
+  let response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (!response.ok && fallbackSender && fallbackSender !== sender) {
+    const fallbackPayload = { ...payload, from: fallbackSender };
+    response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(fallbackPayload),
+    });
+  }
   if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
 }
 
@@ -461,7 +470,8 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
       const sender = recipients[0] || null;
       await sendEmail({
         to: recipients,
-        from: sender,
+        from: submitter?.user_email,
+        fallbackFrom: sender,
         replyTo: submitter?.user_email,
         subject: 'A JCiTL questionnaire has been submitted',
         html: `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
