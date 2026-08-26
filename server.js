@@ -101,20 +101,24 @@ async function requireAnalyst(request, response, next) {
   return next();
 }
 
-async function sendEmail({ to, from, subject, html }) {
+async function sendEmail({ to, from, replyTo, subject, html }) {
   const recipients = Array.isArray(to)
     ? [...new Set(to.map((item) => String(item || '').trim()).filter(Boolean))]
     : [String(to || '').trim()].filter(Boolean);
   const sender = String(from || '').trim();
+  const replyToAddress = String(replyTo || '').trim();
 
   if (!emailConfig.apiKey || !sender || recipients.length === 0) {
     console.warn('Email notification skipped: configure RESEND_API_KEY and sender/recipient settings in database records.');
     return;
   }
+  const payload = { from: sender, to: recipients, subject, html };
+  if (replyToAddress) payload.reply_to = replyToAddress;
+
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: sender, to: recipients, subject, html }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
 }
@@ -453,9 +457,12 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
     `;
     let warning;
     try {
+      const recipients = analystEmails.map((analyst) => analyst.user_email).filter(Boolean);
+      const sender = recipients[0] || null;
       await sendEmail({
-        to: analystEmails.map((analyst) => analyst.user_email),
-        from: submitter?.user_email,
+        to: recipients,
+        from: sender,
+        replyTo: submitter?.user_email,
         subject: 'A JCiTL questionnaire has been submitted',
         html: `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
       });
