@@ -22,7 +22,6 @@ const LOCK_MINUTES = 10;
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
   from: process.env.EMAIL_FROM,
-  analyst: process.env.ANALYST_NOTIFICATION_EMAIL,
 };
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -104,14 +103,18 @@ async function requireAnalyst(request, response, next) {
 }
 
 async function sendEmail(to, subject, html) {
-  if (!emailConfig.apiKey || !emailConfig.from || !to) {
+  const recipients = Array.isArray(to)
+    ? [...new Set(to.map((item) => String(item || '').trim()).filter(Boolean))]
+    : [String(to || '').trim()].filter(Boolean);
+
+  if (!emailConfig.apiKey || !emailConfig.from || recipients.length === 0) {
     console.warn('Email notification skipped: configure RESEND_API_KEY, EMAIL_FROM, and recipient settings.');
     return;
   }
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: emailConfig.from, to: [to], subject, html }),
+    body: JSON.stringify({ from: emailConfig.from, to: recipients, subject, html }),
   });
   if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
 }
@@ -419,7 +422,17 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
       UPDATE questionnaires SET answers = ${JSON.stringify(answers)}::jsonb, status = 'submitted', submitted_at = now()
       WHERE id = ${request.params.id} RETURNING id, brief_id
     `;
-    await sendEmail(emailConfig.analyst, 'A JCiTL questionnaire has been submitted', `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`);
+
+    const analystEmails = await sql`
+      SELECT user_email
+      FROM analyst_users
+      WHERE is_active = true AND user_email IS NOT NULL
+    `;
+    await sendEmail(
+      analystEmails.map((analyst) => analyst.user_email),
+      'A JCiTL questionnaire has been submitted',
+      `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
+    );
     response.json({ message: 'Your answers have been submitted. We will be in touch in due course.' });
   } catch (error) {
     console.error('Failed to submit questionnaire', error);
