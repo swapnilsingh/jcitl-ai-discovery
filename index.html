@@ -131,16 +131,22 @@
           <p class="eyebrow red">ANALYST / REVIEW QUEUE</p>
           <h2>Discovery<br /><span>briefs.</span></h2>
           <p class="intro-copy">Review submitted venture context and identify the strongest signals for follow-up.</p>
-          <div class="analyst-summary"><strong id="brief-count">0</strong><span>SUBMITTED BRIEFS</span></div>
-          <form class="questionnaire-builder" id="questionnaire-builder">
-            <div class="field-heading"><span class="field-label">Prepare a follow-up</span><span class="optional">ANALYST TOOL</span></div>
-            <select id="questionnaire-brief" required><option value="">Select a discovery brief</option></select>
-            <input id="questionnaire-builder-title" maxlength="200" placeholder="Questionnaire title" required />
-            <div id="question-builder-list"></div>
-            <button class="refresh-button" id="add-question" type="button">ADD QUESTION <span>+</span></button>
-            <button class="primary-button" type="submit">SEND QUESTIONNAIRE <span>→</span></button>
-          </form>
-          <div class="brief-list" id="brief-list"></div>
+          <section class="analyst-section">
+            <div class="analyst-section-heading"><span class="field-label">Review submitted briefs</span><span class="analyst-summary"><strong id="brief-count">0</strong><span>SUBMITTED BRIEFS</span></span></div>
+            <div class="brief-list" id="brief-list"></div>
+            <div class="file-preview" id="file-preview" hidden></div>
+          </section>
+          <section class="analyst-section">
+            <div class="analyst-section-heading"><span class="field-label">Create a questionnaire</span><span class="optional">ANALYST TOOL</span></div>
+            <form class="questionnaire-builder" id="questionnaire-builder">
+              <select id="questionnaire-brief" required><option value="">Select a discovery brief</option></select>
+              <p class="selected-brief" id="selected-brief">Select a brief above or use REVIEW on a submitted brief.</p>
+              <input id="questionnaire-builder-title" maxlength="200" placeholder="Questionnaire title" required />
+              <div id="question-builder-list"></div>
+              <button class="refresh-button" id="add-question" type="button">ADD QUESTION <span>+</span></button>
+              <button class="primary-button" type="submit">SEND QUESTIONNAIRE <span>→</span></button>
+            </form>
+          </section>
           <p class="form-message" id="questionnaire-builder-message" role="status"></p>
           <p class="form-message" id="analyst-message" role="status"></p>
         </section>

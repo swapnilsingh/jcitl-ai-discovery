@@ -23,10 +23,12 @@ const questionnaireForm = document.querySelector('#questionnaire-form');
 const questionnaireMessage = document.querySelector('#questionnaire-message');
 const questionnaireBuilder = document.querySelector('#questionnaire-builder');
 const questionnaireBrief = document.querySelector('#questionnaire-brief');
+const selectedBrief = document.querySelector('#selected-brief');
 const questionnaireBuilderTitle = document.querySelector('#questionnaire-builder-title');
 const questionBuilderList = document.querySelector('#question-builder-list');
 const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
 const addQuestion = document.querySelector('#add-question');
+const filePreview = document.querySelector('#file-preview');
 const progressBar = document.querySelector('.progress-track span');
 const progressLabels = document.querySelectorAll('[data-progress-step]');
 const stepLabelText = document.querySelector('#step-label-text');
@@ -48,9 +50,43 @@ async function renderAnalystView() {
   briefCount.textContent = briefs.length;
   questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
   briefList.innerHTML = briefs.length
-    ? briefs.map((brief) => `<article class="brief-item"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><p>${escapeHtml(brief.context)}</p><small>${escapeHtml(brief.stage)}</small></article>`).join('')
+    ? briefs.map((brief) => `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><small>${escapeHtml(brief.stage)}</small></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}">REVIEW</button>${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';
 }
+
+async function previewBriefFile(briefId, fileName, fileType) {
+  const token = await window.Clerk.session?.getToken();
+  const response = await fetch(`/api/analyst/briefs/${briefId}/file`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('The attachment could not be loaded.');
+  const fileUrl = URL.createObjectURL(await response.blob());
+  filePreview.innerHTML = fileType === 'application/pdf'
+    ? `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div><iframe title="${escapeHtml(fileName)}" src="${fileUrl}"></iframe><a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`
+    : `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div><p>This file type cannot be previewed in the browser.</p><a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`;
+  filePreview.hidden = false;
+  document.querySelector('#close-preview').addEventListener('click', () => { filePreview.hidden = true; URL.revokeObjectURL(fileUrl); });
+}
+
+briefList.addEventListener('click', async (event) => {
+  const reviewButton = event.target.closest('.review-brief');
+  const previewButton = event.target.closest('.preview-file');
+  if (reviewButton) {
+    questionnaireBrief.value = reviewButton.dataset.briefId;
+    selectedBrief.textContent = `Selected brief: ${reviewButton.closest('.brief-item').querySelector('strong').textContent}`;
+    questionnaireBuilderTitle.focus();
+  }
+  if (previewButton) {
+    try {
+      await previewBriefFile(previewButton.dataset.briefId, previewButton.dataset.fileName, previewButton.dataset.fileType);
+    } catch (error) {
+      analystMessage.textContent = error.message;
+    }
+  }
+});
+
+questionnaireBrief.addEventListener('change', () => {
+  const option = questionnaireBrief.selectedOptions[0];
+  selectedBrief.textContent = option?.value ? `Selected brief: ${option.textContent}` : 'Select a brief above or use REVIEW on a submitted brief.';
+});
 
 function addQuestionRow() {
   const row = document.createElement('div');
