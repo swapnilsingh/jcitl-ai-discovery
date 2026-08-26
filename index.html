@@ -4,20 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101010" />
-    <meta name="clerk-publishable-key" content="pk_live_Y2xlcmsuamNpdGwuY29tJA" />
     <title>JCiTL | Discovery brief</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
-    <script defer crossorigin="anonymous" src="https://clerk.jcitl.com/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-    <script defer crossorigin="anonymous" data-clerk-publishable-key="pk_live_Y2xlcmsuamNpdGwuY29tJA" src="https://clerk.jcitl.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+    <script async crossorigin="anonymous" data-clerk-publishable-key="__CLERK_PUBLISHABLE_KEY__" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"></script>
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-lockup">
-          <a href="https://jcitl.com" aria-label="Visit JCiTL"><img src="public/logo-black.png" alt="JCiTL" class="logo" /></a>
+          <img src="public/logo-black.png" alt="JCiTL" class="logo" />
           <span class="brand-rule"></span>
           <span class="brand-label">DISCOVERY STUDIO</span>
         </div>
@@ -36,21 +34,14 @@
 
       <main class="main-content">
         <header class="topbar">
-          <div class="mobile-brand"><a href="https://jcitl.com" aria-label="Visit JCiTL"><img src="public/logo-black.png" alt="JCiTL" /></a></div>
+          <div class="mobile-brand"><img src="public/logo-black.png" alt="JCiTL" /></div>
           <div class="step-label"><span class="status-dot"></span> YOUR DISCOVERY BRIEF</div>
-          <div class="auth-controls">
-            <div id="clerk-user-button"></div>
-          </div>
+          <button class="text-button" type="button" aria-label="Save and exit">SAVE &amp; EXIT <span>↗</span></button>
         </header>
 
         <div class="progress-track" aria-label="Step 1 of 3"><span></span></div>
 
-        <section class="form-wrap" id="sign-in-panel">
-          <p id="auth-loading" class="auth-loading">Loading secure sign-in...</p>
-          <div id="clerk-sign-in"></div>
-        </section>
-
-        <section class="form-wrap" id="protected-content" hidden>
+        <section class="form-wrap">
           <div class="section-intro">
             <p class="eyebrow red">01 / ORIENT US</p>
             <h2>Tell us what<br /><span>you’re building.</span></h2>
@@ -58,6 +49,14 @@
           </div>
 
           <form id="discovery-form">
+            <div class="field-block">
+              <div class="field-heading">
+                <label for="company-name">Company name</label>
+                <span class="required">REQUIRED</span>
+              </div>
+              <input id="company-name" name="companyName" type="text" maxlength="200" placeholder="The name of your company" required />
+            </div>
+
             <div class="field-block">
               <div class="field-heading">
                 <label for="venture-context">In a few sentences, what should we know about your venture?</label>
@@ -103,49 +102,9 @@
           </form>
         </section>
 
-        <section class="form-wrap confirmation-panel" id="confirmation-content" hidden>
-          <p class="eyebrow red">BRIEF RECEIVED</p>
-          <h2>Your context<br /><span>is with us.</span></h2>
-          <p class="intro-copy">Your information has been received and will be evaluated in due course. We will be in touch with the next steps.</p>
-        </section>
-
-        <section class="form-wrap questionnaire-panel" id="questionnaire-content" hidden>
-          <p class="eyebrow red">FOLLOW-UP QUESTIONNAIRE</p>
-          <h2 id="questionnaire-title">A few more<br /><span>questions.</span></h2>
-          <p class="intro-copy">Your analyst has prepared a follow-up. Your answers will be returned for review.</p>
-          <form id="questionnaire-form"></form>
-          <p class="form-message" id="questionnaire-message" role="status"></p>
-        </section>
-
-        <section class="form-wrap analyst-dashboard" id="analyst-content" hidden>
-          <div class="section-intro">
-            <p class="eyebrow red">ANALYST / REVIEW QUEUE</p>
-            <h2>Discovery<br /><span>briefs.</span></h2>
-            <p class="intro-copy">Review the latest submitted venture context and identify the strongest signals for follow-up.</p>
-          </div>
-          <div class="analyst-summary"><strong id="brief-count">0</strong><span>SUBMITTED BRIEFS</span><button class="refresh-button" id="refresh-briefs" type="button">REFRESH <span>↻</span></button></div>
-          <form class="questionnaire-builder" id="questionnaire-builder">
-            <div class="field-heading"><span class="field-label">Prepare a follow-up</span><span class="optional">ANALYST TOOL</span></div>
-            <select id="questionnaire-brief" required><option value="">Select a discovery brief</option></select>
-            <input id="questionnaire-builder-title" maxlength="200" placeholder="Questionnaire title" required />
-            <div id="question-builder-list"></div>
-            <button class="refresh-button" id="add-question" type="button">ADD QUESTION <span>+</span></button>
-            <div class="builder-actions">
-              <button class="refresh-button" id="preview-questionnaire" type="button">PREVIEW <span>↗</span></button>
-              <button class="refresh-button" id="save-questionnaire" type="button">SAVE DRAFT <span>↓</span></button>
-            </div>
-            <button class="primary-button" type="submit">SEND QUESTIONNAIRE <span>→</span></button>
-          </form>
-          <p class="form-message" id="questionnaire-builder-message" role="status"></p>
-          <p class="form-message" id="analyst-message" role="status"></p>
-          <div class="brief-list" id="brief-list"></div>
-          <div class="file-preview" id="file-preview" hidden></div>
-          <div class="questionnaire-preview" id="questionnaire-preview" hidden></div>
-        </section>
-
         <footer class="main-footer"><span>JCiTL / 2026</span><span>BUILT FOR BETTER CONVERSATIONS</span></footer>
       </main>
     </div>
-    <script defer src="app.js?v=6"></script>
+    <script src="app.js"></script>
   </body>
 </html>

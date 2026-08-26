@@ -92,7 +92,7 @@ app.get('/api/analyst/briefs', requireAuth, async (request, response) => {
 
   try {
     const briefs = await sql`
-      SELECT b.id, b.clerk_user_id, b.user_name, b.user_email, b.context, b.stage, b.file_name, b.file_size, b.file_mime_type, b.review_status, b.created_at,
+      SELECT b.id, b.clerk_user_id, b.user_name, b.user_email, b.company_name, b.context, b.stage, b.file_name, b.file_size, b.file_mime_type, b.review_status, b.created_at,
         q.id AS questionnaire_id, q.title AS questionnaire_title, q.status AS questionnaire_status, q.questions AS questionnaire_questions, q.answers AS questionnaire_answers
       FROM discovery_briefs b
       LEFT JOIN LATERAL (
@@ -198,7 +198,7 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
 });
 
 app.post('/api/discovery-briefs', requireAuth, upload.single('file'), async (request, response) => {
-  const { context, stage } = request.body;
+  const { companyName, context, stage } = request.body;
   const allowedStages = new Set([
     'Idea / pre-revenue',
     'Early traction',
@@ -206,7 +206,7 @@ app.post('/api/discovery-briefs', requireAuth, upload.single('file'), async (req
     'Exploring next move',
   ]);
 
-  if (typeof context !== 'string' || !context.trim() || context.length > 600 || !allowedStages.has(stage)) {
+  if (typeof companyName !== 'string' || !companyName.trim() || companyName.length > 200 || typeof context !== 'string' || !context.trim() || context.length > 600 || !allowedStages.has(stage)) {
     return response.status(400).json({ error: 'Please complete the required fields.' });
   }
 
@@ -219,8 +219,8 @@ app.post('/api/discovery-briefs', requireAuth, upload.single('file'), async (req
     const userName = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
     const userEmail = user.primaryEmailAddress?.emailAddress || null;
     await sql`
-      INSERT INTO discovery_briefs (clerk_user_id, user_name, user_email, context, stage, file_name, file_size, file_mime_type, file_data)
-      VALUES (${request.auth.sub}, ${userName}, ${userEmail}, ${context.trim()}, ${stage}, ${request.file?.originalname || null}, ${request.file?.size || null}, ${request.file?.mimetype || null}, ${request.file?.buffer || null})
+      INSERT INTO discovery_briefs (clerk_user_id, user_name, user_email, company_name, context, stage, file_name, file_size, file_mime_type, file_data)
+      VALUES (${request.auth.sub}, ${userName}, ${userEmail}, ${companyName.trim()}, ${context.trim()}, ${stage}, ${request.file?.originalname || null}, ${request.file?.size || null}, ${request.file?.mimetype || null}, ${request.file?.buffer || null})
     `;
     return response.status(201).json({ message: 'Your discovery brief has been received and will be evaluated. We will be in touch in due course.' });
   } catch (error) {

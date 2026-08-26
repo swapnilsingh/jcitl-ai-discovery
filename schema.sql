@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS discovery_briefs (
   clerk_user_id TEXT NOT NULL,
   user_name TEXT,
   user_email TEXT,
+  company_name TEXT,
   context TEXT NOT NULL CHECK (char_length(context) BETWEEN 1 AND 600),
   stage TEXT NOT NULL,
   file_name TEXT,
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS discovery_briefs (
 
 ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS user_name TEXT;
 ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS user_email TEXT;
+ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS company_name TEXT;
 ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS file_mime_type TEXT;
 ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS file_data BYTEA;
 ALTER TABLE discovery_briefs ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'new';
