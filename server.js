@@ -21,7 +21,6 @@ const analystRoleCache = new Set();
 const LOCK_MINUTES = 10;
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
-  replyTo: process.env.USER_REPLY_EMAIL,
 };
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -102,13 +101,12 @@ async function requireAnalyst(request, response, next) {
   return next();
 }
 
-async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
+async function sendEmail({ to, from, fallbackFrom, subject, html }) {
   const recipients = Array.isArray(to)
     ? [...new Set(to.map((item) => String(item || '').trim()).filter(Boolean))]
     : [String(to || '').trim()].filter(Boolean);
   const sender = String(from || '').trim();
   const fallbackSender = String(fallbackFrom || '').trim();
-  const replyToAddress = String(replyTo || emailConfig.replyTo || '').trim();
   const initialSender = sender || fallbackSender;
 
   if (!emailConfig.apiKey || !initialSender || recipients.length === 0) {
@@ -116,7 +114,6 @@ async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
     return;
   }
   const payload = { from: initialSender, to: recipients, subject, html };
-  if (replyToAddress) payload.reply_to = replyToAddress;
 
   let response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
