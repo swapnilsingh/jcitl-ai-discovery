@@ -18,6 +18,7 @@ if (!process.env.CLERK_PUBLISHABLE_KEY || !process.env.CLERK_SECRET_KEY || !proc
 const sql = neon(process.env.DATABASE_URL);
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 const analystUserIds = new Set((process.env.ANALYST_USER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean));
+const analystRoleCache = new Set();
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
   from: process.env.EMAIL_FROM,
@@ -58,12 +59,20 @@ async function requireAuth(request, response, next) {
 
 async function isAnalyst(auth) {
   const metadata = auth.public_metadata || auth.publicMetadata || auth.metadata || auth.sessionClaims?.metadata || {};
-  if (analystUserIds.has(auth.sub) || metadata.role === 'analyst') return true;
+  if (analystUserIds.has(auth.sub) || metadata.role === 'analyst') {
+    analystRoleCache.add(auth.sub);
+    return true;
+  }
+  if (analystRoleCache.has(auth.sub)) return true;
 
   try {
     const user = await clerkClient.users.getUser(auth.sub);
-    return user.publicMetadata?.role === 'analyst' || user.privateMetadata?.role === 'analyst';
-  } catch {
+    const hasAnalystRole = user.publicMetadata?.role === 'analyst' || user.privateMetadata?.role === 'analyst';
+    if (hasAnalystRole) analystRoleCache.add(auth.sub);
+    return hasAnalystRole;
+  } catch (error) {
+    if (analystRoleCache.has(auth.sub)) return true;
+    console.warn('Analyst role lookup failed', error?.message || error);
     return false;
   }
 }

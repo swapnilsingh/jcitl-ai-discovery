@@ -127,8 +127,18 @@ questionnaireBrief.addEventListener('change', () => {
 function addQuestionRow() {
   const row = document.createElement('div');
   row.className = 'question-row';
-  row.innerHTML = '<input class="question-prompt" maxlength="500" placeholder="Question" required /><select class="question-type"><option value="text">Short answer</option><option value="textarea">Long answer</option></select><button class="remove-question" type="button" aria-label="Remove question">×</button>';
+  row.innerHTML = '<input class="question-prompt" maxlength="500" placeholder="Question" required /><select class="question-type"><option value="text">Short answer</option><option value="textarea">Long answer</option><option value="multiple-choice">Multiple choice (single answer)</option><option value="multi-select">Multiple choice (multiple answers)</option></select><input class="question-options" maxlength="1000" placeholder="Options (comma separated)" hidden /><button class="remove-question" type="button" aria-label="Remove question">×</button>';
   questionBuilderList.append(row);
+  const typeField = row.querySelector('.question-type');
+  const optionsField = row.querySelector('.question-options');
+  const updateOptionsVisibility = () => {
+    const needsOptions = ['multiple-choice', 'multi-select'].includes(typeField.value);
+    optionsField.hidden = !needsOptions;
+    optionsField.required = needsOptions;
+    if (!needsOptions) optionsField.value = '';
+  };
+  typeField.addEventListener('change', updateOptionsVisibility);
+  updateOptionsVisibility();
   row.querySelector('.remove-question').addEventListener('click', () => row.remove());
 }
 
@@ -137,8 +147,40 @@ function getBuilderQuestions() {
     prompt: row.querySelector('.question-prompt').value.trim(),
     type: row.querySelector('.question-type').value,
     required: true,
-    options: [],
+    options: row.querySelector('.question-options').value.split(',').map((option) => option.trim()).filter(Boolean),
   }));
+}
+
+function renderQuestionInput(question) {
+  const questionId = escapeHtml(question.id);
+  if (question.type === 'textarea') return `<textarea data-question-id="${questionId}" data-question-type="textarea" required></textarea>`;
+  if (question.type === 'multiple-choice') {
+    const options = Array.isArray(question.options) ? question.options : [];
+    return `<div class="choice-group" data-question-id="${questionId}" data-question-type="multiple-choice">${options.map((option, index) => `<label><input type="radio" name="question-${questionId}" value="${escapeHtml(option)}" ${index === 0 ? 'required' : ''} /> ${escapeHtml(option)}</label>`).join('')}</div>`;
+  }
+  if (question.type === 'multi-select') {
+    const options = Array.isArray(question.options) ? question.options : [];
+    return `<div class="choice-group" data-question-id="${questionId}" data-question-type="multi-select">${options.map((option) => `<label><input type="checkbox" value="${escapeHtml(option)}" /> ${escapeHtml(option)}</label>`).join('')}</div>`;
+  }
+  return `<input type="text" data-question-id="${questionId}" data-question-type="text" required />`;
+}
+
+function collectQuestionnaireAnswers() {
+  const answers = {};
+  questionnaireForm.querySelectorAll('[data-question-id][data-question-type]').forEach((field) => {
+    const questionId = field.dataset.questionId;
+    const type = field.dataset.questionType;
+    if (type === 'multiple-choice') {
+      answers[questionId] = field.querySelector('input:checked')?.value || '';
+      return;
+    }
+    if (type === 'multi-select') {
+      answers[questionId] = [...field.querySelectorAll('input:checked')].map((input) => input.value);
+      return;
+    }
+    answers[questionId] = field.value;
+  });
+  return answers;
 }
 
 async function renderUserQuestionnaire() {
@@ -153,7 +195,7 @@ async function renderUserQuestionnaire() {
   questionnaireContent.hidden = false;
   questionnaireTitle.innerHTML = `${escapeHtml(current.title)}<br /><span>for your venture.</span>`;
   questionnaireForm.dataset.questionnaireId = current.id;
-  questionnaireForm.innerHTML = current.questions.map((question) => `<div class="field-block"><label class="field-label">${escapeHtml(question.prompt)}</label>${question.type === 'textarea' ? `<textarea data-question-id="${escapeHtml(question.id)}" required></textarea>` : `<input type="text" data-question-id="${escapeHtml(question.id)}" required />`}</div>`).join('') + '<button class="primary-button" type="submit">SUBMIT ANSWERS <span>→</span></button>';
+  questionnaireForm.innerHTML = current.questions.map((question) => `<div class="field-block"><label class="field-label">${escapeHtml(question.prompt)}</label>${renderQuestionInput(question)}</div>`).join('') + '<button class="primary-button" type="submit">SUBMIT ANSWERS <span>→</span></button>';
   setProgress(3, 'FOLLOW-UP QUESTIONS');
 }
 
@@ -304,11 +346,17 @@ addQuestionRow();
 
 questionnaireBuilder.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const questions = getBuilderQuestions();
+  const invalidChoiceQuestion = questions.find((question) => ['multiple-choice', 'multi-select'].includes(question.type) && question.options.length < 2);
+  if (invalidChoiceQuestion) {
+    questionnaireBuilderMessage.textContent = 'Choice questions need at least two options.';
+    return;
+  }
   const token = await window.Clerk.session?.getToken();
   const response = await fetch('/api/analyst/questionnaires', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ briefId: questionnaireBrief.value, title: questionnaireBuilderTitle.value, questions: getBuilderQuestions(), status: 'prepared' }),
+    body: JSON.stringify({ briefId: questionnaireBrief.value, title: questionnaireBuilderTitle.value, questions, status: 'prepared' }),
   });
   const result = await response.json();
   questionnaireBuilderMessage.textContent = response.ok ? 'Questionnaire prepared and user notified.' : result.error;
@@ -318,7 +366,7 @@ questionnaireBuilder.addEventListener('submit', async (event) => {
 questionnaireForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const token = await window.Clerk.session?.getToken();
-  const answers = Object.fromEntries([...questionnaireForm.querySelectorAll('[data-question-id]')].map((field) => [field.dataset.questionId, field.value]));
+  const answers = collectQuestionnaireAnswers();
   const response = await fetch(`/api/questionnaires/${questionnaireForm.dataset.questionnaireId}/submit`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) });
   const result = await response.json();
   questionnaireMessage.textContent = response.ok ? result.message : result.error;
