@@ -29,10 +29,13 @@ const questionBuilderList = document.querySelector('#question-builder-list');
 const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
 const addQuestion = document.querySelector('#add-question');
 const filePreview = document.querySelector('#file-preview');
+const briefFilters = document.querySelectorAll('[data-brief-filter]');
 const progressBar = document.querySelector('.progress-track span');
 const progressLabels = document.querySelectorAll('[data-progress-step]');
 const stepLabelText = document.querySelector('#step-label-text');
 const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
+let analystBriefs = [];
+let activeBriefFilter = 'all';
 
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
@@ -47,10 +50,25 @@ async function renderAnalystView() {
   const response = await fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw new Error('Could not load analyst briefs.');
   const { briefs } = await response.json();
-  briefCount.textContent = briefs.length;
+  analystBriefs = briefs;
   questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
-  briefList.innerHTML = briefs.length
-    ? briefs.map((brief) => `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><small>${escapeHtml(brief.stage)}</small></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}">REVIEW</button>${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`).join('')
+  renderFilteredBriefs();
+}
+
+function getBriefState(brief) {
+  if (brief.questionnaire_status === 'submitted') return { key: 'answers', label: 'ANSWERS RECEIVED' };
+  if (brief.questionnaire_status === 'prepared') return { key: 'questions', label: 'QUESTIONS READY' };
+  return { key: 'new', label: 'NEW' };
+}
+
+function renderFilteredBriefs() {
+  const filteredBriefs = activeBriefFilter === 'all' ? analystBriefs : analystBriefs.filter((brief) => getBriefState(brief).key === activeBriefFilter);
+  briefCount.textContent = filteredBriefs.length;
+  briefList.innerHTML = filteredBriefs.length
+    ? filteredBriefs.map((brief) => {
+      const state = getBriefState(brief);
+      return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b></div></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}">REVIEW</button>${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
+    }).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';
 }
 
@@ -82,6 +100,12 @@ briefList.addEventListener('click', async (event) => {
     }
   }
 });
+
+briefFilters.forEach((filter) => filter.addEventListener('click', () => {
+  activeBriefFilter = filter.dataset.briefFilter;
+  briefFilters.forEach((item) => item.classList.toggle('active', item === filter));
+  renderFilteredBriefs();
+}));
 
 questionnaireBrief.addEventListener('change', () => {
   const option = questionnaireBrief.selectedOptions[0];
