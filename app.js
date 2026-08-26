@@ -16,6 +16,17 @@ const analystContent = document.querySelector('#analyst-content');
 const briefCount = document.querySelector('#brief-count');
 const briefList = document.querySelector('#brief-list');
 const analystMessage = document.querySelector('#analyst-message');
+const confirmationContent = document.querySelector('#confirmation-content');
+const questionnaireContent = document.querySelector('#questionnaire-content');
+const questionnaireTitle = document.querySelector('#questionnaire-title');
+const questionnaireForm = document.querySelector('#questionnaire-form');
+const questionnaireMessage = document.querySelector('#questionnaire-message');
+const questionnaireBuilder = document.querySelector('#questionnaire-builder');
+const questionnaireBrief = document.querySelector('#questionnaire-brief');
+const questionnaireBuilderTitle = document.querySelector('#questionnaire-builder-title');
+const questionBuilderList = document.querySelector('#question-builder-list');
+const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
+const addQuestion = document.querySelector('#add-question');
 const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
 
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -26,9 +37,42 @@ async function renderAnalystView() {
   if (!response.ok) throw new Error('Could not load analyst briefs.');
   const { briefs } = await response.json();
   briefCount.textContent = briefs.length;
+  questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
   briefList.innerHTML = briefs.length
     ? briefs.map((brief) => `<article class="brief-item"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><p>${escapeHtml(brief.context)}</p><small>${escapeHtml(brief.stage)}</small></article>`).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';
+}
+
+function addQuestionRow() {
+  const row = document.createElement('div');
+  row.className = 'question-row';
+  row.innerHTML = '<input class="question-prompt" maxlength="500" placeholder="Question" required /><select class="question-type"><option value="text">Short answer</option><option value="textarea">Long answer</option></select><button class="remove-question" type="button" aria-label="Remove question">×</button>';
+  questionBuilderList.append(row);
+  row.querySelector('.remove-question').addEventListener('click', () => row.remove());
+}
+
+function getBuilderQuestions() {
+  return [...questionBuilderList.querySelectorAll('.question-row')].map((row) => ({
+    prompt: row.querySelector('.question-prompt').value.trim(),
+    type: row.querySelector('.question-type').value,
+    required: true,
+    options: [],
+  }));
+}
+
+async function renderUserQuestionnaire() {
+  const token = await window.Clerk.session?.getToken();
+  if (!token) return;
+  const response = await fetch('/api/questionnaires/current', { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('Could not load your questionnaire.');
+  const { questionnaires } = await response.json();
+  const current = questionnaires.find((item) => item.status === 'prepared');
+  if (!current) return;
+  protectedContent.hidden = true;
+  questionnaireContent.hidden = false;
+  questionnaireTitle.innerHTML = `${escapeHtml(current.title)}<br /><span>for your venture.</span>`;
+  questionnaireForm.dataset.questionnaireId = current.id;
+  questionnaireForm.innerHTML = current.questions.map((question) => `<div class="field-block"><label class="field-label">${escapeHtml(question.prompt)}</label>${question.type === 'textarea' ? `<textarea data-question-id="${escapeHtml(question.id)}" required></textarea>` : `<input type="text" data-question-id="${escapeHtml(question.id)}" required />`}</div>`).join('') + '<button class="primary-button" type="submit">SUBMIT ANSWERS <span>→</span></button>';
 }
 
 async function startClerk() {
@@ -54,6 +98,8 @@ async function startClerk() {
     signInPanel.hidden = signedIn;
     protectedContent.hidden = !signedIn;
     analystContent.hidden = true;
+    confirmationContent.hidden = true;
+    questionnaireContent.hidden = true;
     if (signedIn) {
       if (!clerkUserButton.hasChildNodes()) {
         window.Clerk.mountUserButton(clerkUserButton, { afterSignOutUrl: redirectUrl });
@@ -66,6 +112,8 @@ async function startClerk() {
           protectedContent.hidden = true;
           analystContent.hidden = false;
           await renderAnalystView();
+        } else {
+          await renderUserQuestionnaire();
         }
       }).catch((error) => {
         analystMessage.textContent = error.message;
@@ -144,9 +192,35 @@ form.addEventListener('submit', async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'We could not save your brief.');
-    message.textContent = result.message;
+    protectedContent.hidden = true;
+    confirmationContent.hidden = false;
     document.querySelector('.progress-track span').style.width = '66.66%';
   } catch (error) {
     message.textContent = error.message;
   }
+});
+
+addQuestion.addEventListener('click', addQuestionRow);
+addQuestionRow();
+
+questionnaireBuilder.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const token = await window.Clerk.session?.getToken();
+  const response = await fetch('/api/analyst/questionnaires', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ briefId: questionnaireBrief.value, title: questionnaireBuilderTitle.value, questions: getBuilderQuestions(), status: 'prepared' }),
+  });
+  const result = await response.json();
+  questionnaireBuilderMessage.textContent = response.ok ? 'Questionnaire prepared and user notified.' : result.error;
+  if (response.ok) await renderAnalystView();
+});
+
+questionnaireForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const token = await window.Clerk.session?.getToken();
+  const answers = Object.fromEntries([...questionnaireForm.querySelectorAll('[data-question-id]')].map((field) => [field.dataset.questionId, field.value]));
+  const response = await fetch(`/api/questionnaires/${questionnaireForm.dataset.questionnaireId}/submit`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) });
+  const result = await response.json();
+  questionnaireMessage.textContent = response.ok ? result.message : result.error;
 });
