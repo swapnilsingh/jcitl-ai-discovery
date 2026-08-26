@@ -21,6 +21,7 @@ const analystRoleCache = new Set();
 const LOCK_MINUTES = 10;
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
+  replyTo: process.env.USER_REPLY_EMAIL,
 };
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -107,7 +108,7 @@ async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
     : [String(to || '').trim()].filter(Boolean);
   const sender = String(from || '').trim();
   const fallbackSender = String(fallbackFrom || '').trim();
-  const replyToAddress = String(replyTo || '').trim();
+  const replyToAddress = String(replyTo || emailConfig.replyTo || '').trim();
   const initialSender = sender || fallbackSender;
 
   if (!emailConfig.apiKey || !initialSender || recipients.length === 0) {
