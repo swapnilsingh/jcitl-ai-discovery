@@ -32,6 +32,7 @@ const analystUsersForm = document.querySelector('#analyst-users-form');
 const analystUserIdInput = document.querySelector('#analyst-user-id');
 const analystUsersList = document.querySelector('#analyst-users-list');
 const analystUsersMessage = document.querySelector('#analyst-users-message');
+const analystUsersSection = document.querySelector('#analyst-users-section');
 const filePreview = document.querySelector('#file-preview');
 const briefFilters = document.querySelectorAll('[data-brief-filter]');
 const progressBar = document.querySelector('.progress-track span');
@@ -53,21 +54,29 @@ function setProgress(step, label) {
 
 async function renderAnalystView() {
   const token = await window.Clerk.session?.getToken();
-  const [briefsResponse, analystsResponse] = await Promise.all([
-    fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } }),
-    fetch('/api/analyst/users', { headers: { Authorization: `Bearer ${token}` } }),
-  ]);
+  const briefsResponse = await fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } });
   if (!briefsResponse.ok) throw new Error('Could not load analyst briefs.');
-  if (!analystsResponse.ok) throw new Error('Could not load analyst users.');
 
   const { briefs } = await briefsResponse.json();
-  const { analysts } = await analystsResponse.json();
   analystBriefs = briefs;
   questionnaireBrief.innerHTML = '<option value="">Select a discovery brief</option>' + briefs.map((brief) => `<option value="${brief.id}">${escapeHtml(brief.company_name || 'Unnamed company')}</option>`).join('');
-  analystUsersList.innerHTML = analysts.length
-    ? analysts.map((analyst) => `<article class="analyst-user-item"><div><strong>${escapeHtml(analyst.user_name || 'Unnamed analyst')}</strong><span>${escapeHtml(analyst.user_email || analyst.clerk_user_id)}</span><small>${escapeHtml(analyst.clerk_user_id)}</small></div><button class="refresh-button remove-analyst" type="button" data-analyst-id="${escapeHtml(analyst.clerk_user_id)}">REMOVE</button></article>`).join('')
-    : '<p class="empty-state">No analysts assigned yet.</p>';
   renderFilteredBriefs();
+
+  if (!analystUsersSection) return;
+  analystUsersSection.hidden = false;
+  analystUsersMessage.textContent = '';
+
+  try {
+    const analystsResponse = await fetch('/api/analyst/users', { headers: { Authorization: `Bearer ${token}` } });
+    if (!analystsResponse.ok) throw new Error('Analyst assignment is unavailable. Apply the latest schema migration to enable it.');
+    const { analysts } = await analystsResponse.json();
+    analystUsersList.innerHTML = analysts.length
+      ? analysts.map((analyst) => `<article class="analyst-user-item"><div><strong>${escapeHtml(analyst.user_name || 'Unnamed analyst')}</strong><span>${escapeHtml(analyst.user_email || analyst.clerk_user_id)}</span><small>${escapeHtml(analyst.clerk_user_id)}</small></div><button class="refresh-button remove-analyst" type="button" data-analyst-id="${escapeHtml(analyst.clerk_user_id)}">REMOVE</button></article>`).join('')
+      : '<p class="empty-state">No analysts assigned yet.</p>';
+  } catch (error) {
+    analystUsersSection.hidden = true;
+    analystUsersMessage.textContent = error.message;
+  }
 }
 
 function getBriefState(brief) {
@@ -128,7 +137,7 @@ briefList.addEventListener('click', async (event) => {
   }
 });
 
-analystUsersList.addEventListener('click', async (event) => {
+analystUsersList?.addEventListener('click', async (event) => {
   const removeButton = event.target.closest('.remove-analyst');
   if (!removeButton) return;
 
@@ -436,7 +445,7 @@ questionnaireBuilder.addEventListener('submit', async (event) => {
   }
 });
 
-analystUsersForm.addEventListener('submit', async (event) => {
+analystUsersForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   analystUsersMessage.textContent = '';
   try {
