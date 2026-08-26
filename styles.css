@@ -55,6 +55,11 @@ h1 em { color: var(--red); font-style: normal; }
 .lock-mine { color: #75d39b; }
 .lock-other { color: #ff9f7a; }
 .brief-item p { color: #d0d0d0; font-size: 12px; line-height: 1.6; margin: 14px 0; }
+.answers-panel { border-top: 1px dashed #3c3c3c; margin-top: 14px; padding-top: 14px; display: grid; gap: 10px; }
+.answers-panel h4 { margin: 0; color: #8f8f8f; font: 10px 'DM Mono', monospace; letter-spacing: .08em; }
+.answer-row { display: grid; gap: 5px; }
+.answer-question { color: var(--gold); font-size: 12px; font-weight: 600; }
+.answer-value { margin: 0; color: #e0e0e0; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
 .brief-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .brief-actions .refresh-button:disabled { opacity: .45; cursor: not-allowed; }
 .no-attachment { color: #666; font: 9px 'DM Mono', monospace; letter-spacing: .08em; }

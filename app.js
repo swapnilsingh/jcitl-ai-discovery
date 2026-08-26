@@ -193,6 +193,35 @@ function getBriefState(brief) {
   return { key: 'new', label: 'NEW' };
 }
 
+function formatAnswerValue(answer) {
+  if (Array.isArray(answer)) return answer.length ? answer.join(', ') : 'No selection';
+  if (answer === null || answer === undefined) return 'No response';
+  if (typeof answer === 'object') {
+    try {
+      return JSON.stringify(answer);
+    } catch {
+      return 'No response';
+    }
+  }
+  const value = String(answer).trim();
+  return value || 'No response';
+}
+
+function renderSubmittedAnswers(brief) {
+  if (brief.questionnaire_status !== 'submitted') return '';
+  const questions = Array.isArray(brief.questionnaire_questions) ? brief.questionnaire_questions : [];
+  const answers = brief.questionnaire_answers && typeof brief.questionnaire_answers === 'object' ? brief.questionnaire_answers : {};
+  if (!questions.length) return '';
+
+  const answerRows = questions.map((question) => {
+    const prompt = question?.prompt ? String(question.prompt) : 'Question';
+    const answer = formatAnswerValue(answers[question?.id]);
+    return `<div class="answer-row"><span class="answer-question">${escapeHtml(prompt)}</span><p class="answer-value">${escapeHtml(answer)}</p></div>`;
+  }).join('');
+
+  return `<section class="answers-panel"><h4>SUBMITTED ANSWERS</h4>${answerRows}</section>`;
+}
+
 function renderFilteredBriefs() {
   const filteredBriefs = activeBriefFilter === 'all' ? analystBriefs : analystBriefs.filter((brief) => getBriefState(brief).key === activeBriefFilter);
   briefCount.textContent = filteredBriefs.length;
@@ -204,7 +233,7 @@ function renderFilteredBriefs() {
       const lockOwner = brief.lock_owner_name || brief.lock_owner_email || brief.lock_owner_user_id;
       const lockLabel = lockedByCurrent ? 'LOCKED BY YOU' : isLocked ? `LOCKED BY ${escapeHtml(lockOwner)}` : 'UNLOCKED';
       const reviewLabel = lockedByCurrent ? 'CONTINUE' : isLocked ? 'LOCKED' : 'LOCK & REVIEW';
-      return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b><b class="brief-lock ${lockedByCurrent ? 'lock-mine' : isLocked ? 'lock-other' : 'lock-open'}">${lockLabel}</b></div></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}" ${isLocked && !lockedByCurrent ? 'disabled' : ''}>${reviewLabel}</button>${lockedByCurrent ? `<button class="refresh-button unlock-brief-inline" type="button" data-brief-id="${brief.id}">UNLOCK</button>` : ''}${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
+      return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b><b class="brief-lock ${lockedByCurrent ? 'lock-mine' : isLocked ? 'lock-other' : 'lock-open'}">${lockLabel}</b></div></div><p>${escapeHtml(brief.context)}</p>${renderSubmittedAnswers(brief)}<div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}" ${isLocked && !lockedByCurrent ? 'disabled' : ''}>${reviewLabel}</button>${lockedByCurrent ? `<button class="refresh-button unlock-brief-inline" type="button" data-brief-id="${brief.id}">UNLOCK</button>` : ''}${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
     }).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';
 }
