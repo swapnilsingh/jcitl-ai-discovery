@@ -387,18 +387,24 @@ app.post('/api/analyst/questionnaires', requireAuth, requireAnalyst, async (requ
       VALUES (${briefId}, ${brief.clerk_user_id}, ${title.trim()}, ${JSON.stringify(cleanQuestions)}::jsonb, ${status})
       RETURNING id, title, status, prepared_at
     `;
+    let warning;
     if (status === 'prepared') {
-      await sendEmail({
-        to: brief.user_email,
-        from: analystUser?.user_email,
-        subject: 'Your JCiTL follow-up questionnaire is ready',
-        html: `<p>Hello ${brief.user_name || 'there'},</p><p>Your follow-up questionnaire is ready. Sign in to JCiTL Discovery Studio to complete it.</p>`,
-      });
+      try {
+        await sendEmail({
+          to: brief.user_email,
+          from: analystUser?.user_email,
+          subject: 'Your JCiTL follow-up questionnaire is ready',
+          html: `<p>Hello ${brief.user_name || 'there'},</p><p>Your follow-up questionnaire is ready. Sign in to JCiTL Discovery Studio to complete it.</p>`,
+        });
+      } catch (error) {
+        warning = 'Questionnaire was saved, but the notification email could not be sent.';
+        console.error('Failed to send questionnaire prepared notification', error);
+      }
     }
-    return response.status(201).json({ questionnaire });
+    return response.status(201).json({ questionnaire, warning });
   } catch (error) {
     console.error('Failed to prepare questionnaire', error);
-    return response.status(500).json({ error: 'Questionnaire saved, but the notification could not be sent.' });
+    return response.status(500).json({ error: 'We could not save this questionnaire.' });
   }
 });
 
@@ -445,13 +451,19 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
       FROM analyst_users
       WHERE is_active = true AND user_email IS NOT NULL
     `;
-    await sendEmail({
-      to: analystEmails.map((analyst) => analyst.user_email),
-      from: submitter?.user_email,
-      subject: 'A JCiTL questionnaire has been submitted',
-      html: `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
-    });
-    response.json({ message: 'Your answers have been submitted. We will be in touch in due course.' });
+    let warning;
+    try {
+      await sendEmail({
+        to: analystEmails.map((analyst) => analyst.user_email),
+        from: submitter?.user_email,
+        subject: 'A JCiTL questionnaire has been submitted',
+        html: `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
+      });
+    } catch (error) {
+      warning = 'Your answers were submitted, but analyst notification email could not be sent.';
+      console.error('Failed to send questionnaire submitted notification', error);
+    }
+    response.json({ message: 'Your answers have been submitted. We will be in touch in due course.', warning });
   } catch (error) {
     console.error('Failed to submit questionnaire', error);
     response.status(500).json({ error: 'We could not submit your answers.' });

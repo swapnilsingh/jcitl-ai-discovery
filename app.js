@@ -607,9 +607,9 @@ questionnaireBuilder.addEventListener('submit', async (event) => {
   });
   const result = await response.json();
   questionnaireBuilderMessage.textContent = response.ok
-    ? submitStatus === 'draft'
+    ? (result.warning || (submitStatus === 'draft'
       ? 'Draft questionnaire saved.'
-      : 'Questionnaire prepared and user notified.'
+      : 'Questionnaire prepared and user notified.'))
     : result.error;
   if (response.ok) {
     if (submitStatus === 'prepared') {
@@ -663,5 +663,5 @@ questionnaireForm.addEventListener('submit', async (event) => {
   const answers = collectQuestionnaireAnswers();
   const response = await fetch(`/api/questionnaires/${questionnaireForm.dataset.questionnaireId}/submit`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ answers }) });
   const result = await response.json();
-  questionnaireMessage.textContent = response.ok ? result.message : result.error;
+  questionnaireMessage.textContent = response.ok ? (result.warning || result.message) : result.error;
 });
