@@ -171,7 +171,7 @@ async function renderAnalystView() {
   updateUnlockBriefButton();
 
   if (!analystUsersSection) return;
-  analystUsersSection.hidden = false;
+  analystUsersSection.hidden = true;
   analystUsersMessage.textContent = '';
 
   try {
@@ -203,7 +203,7 @@ function renderFilteredBriefs() {
       const isLocked = Boolean(brief.lock_owner_user_id);
       const lockOwner = brief.lock_owner_name || brief.lock_owner_email || brief.lock_owner_user_id;
       const lockLabel = lockedByCurrent ? 'LOCKED BY YOU' : isLocked ? `LOCKED BY ${escapeHtml(lockOwner)}` : 'UNLOCKED';
-      const reviewLabel = lockedByCurrent ? 'CONTINUE' : isLocked ? 'LOCKED' : 'REVIEW';
+      const reviewLabel = lockedByCurrent ? 'CONTINUE' : isLocked ? 'LOCKED' : 'LOCK & REVIEW';
       return `<article class="brief-item"><div class="brief-item-heading"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><div class="brief-meta"><small>${escapeHtml(brief.stage)}</small><b class="brief-status status-${state.key}">${state.label}</b><b class="brief-lock ${lockedByCurrent ? 'lock-mine' : isLocked ? 'lock-other' : 'lock-open'}">${lockLabel}</b></div></div><p>${escapeHtml(brief.context)}</p><div class="brief-actions"><button class="refresh-button review-brief" type="button" data-brief-id="${brief.id}" ${isLocked && !lockedByCurrent ? 'disabled' : ''}>${reviewLabel}</button>${lockedByCurrent ? `<button class="refresh-button unlock-brief-inline" type="button" data-brief-id="${brief.id}">UNLOCK</button>` : ''}${brief.file_name ? `<button class="refresh-button preview-file" type="button" data-brief-id="${brief.id}" data-file-name="${escapeHtml(brief.file_name)}" data-file-type="${escapeHtml(brief.file_mime_type || '')}">PREVIEW / DOWNLOAD</button>` : '<span class="no-attachment">NO ATTACHMENT</span>'}</div></article>`;
     }).join('')
     : '<p class="empty-state">No discovery briefs submitted yet.</p>';

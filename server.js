@@ -244,12 +244,12 @@ app.post('/api/analyst/briefs/:id/lock', requireAuth, requireAnalyst, async (req
 
     const [lock] = await sql`
       INSERT INTO brief_locks (brief_id, analyst_clerk_user_id, locked_at, expires_at, updated_at)
-      VALUES (${briefId}, ${request.auth.sub}, now(), now() + interval '${LOCK_MINUTES} minutes', now())
+      VALUES (${briefId}, ${request.auth.sub}, now(), now() + (${LOCK_MINUTES} * interval '1 minute'), now())
       ON CONFLICT (brief_id)
       DO UPDATE SET
         analyst_clerk_user_id = EXCLUDED.analyst_clerk_user_id,
         locked_at = now(),
-        expires_at = now() + interval '${LOCK_MINUTES} minutes',
+        expires_at = now() + (${LOCK_MINUTES} * interval '1 minute'),
         updated_at = now()
       WHERE brief_locks.expires_at <= now() OR brief_locks.analyst_clerk_user_id = ${request.auth.sub}
       RETURNING brief_id, analyst_clerk_user_id, locked_at, expires_at
@@ -290,7 +290,7 @@ app.post('/api/analyst/briefs/:id/lock/heartbeat', requireAuth, requireAnalyst, 
   try {
     const [lock] = await sql`
       UPDATE brief_locks
-      SET expires_at = now() + interval '${LOCK_MINUTES} minutes', updated_at = now()
+      SET expires_at = now() + (${LOCK_MINUTES} * interval '1 minute'), updated_at = now()
       WHERE brief_id = ${briefId} AND analyst_clerk_user_id = ${request.auth.sub}
       RETURNING brief_id, expires_at
     `;
