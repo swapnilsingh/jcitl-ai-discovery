@@ -83,11 +83,13 @@ async function previewBriefFile(briefId, fileName, fileType) {
   filePreview.hidden = false;
   if (isPptx) {
     try {
-      const { init } = await import('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/+esm');
-      const previewer = init(document.querySelector('#pptx-preview'), { width: 960, height: 540, mode: 'slide' });
-      await previewer.preview(await blob.arrayBuffer());
+      const { PptxViewer, RECOMMENDED_ZIP_LIMITS } = await import('https://cdn.jsdelivr.net/npm/@aiden0z/pptx-renderer@1.2.4/dist/aiden0z-pptx-renderer.browser.es.js');
+      await PptxViewer.open(await blob.arrayBuffer(), document.querySelector('#pptx-preview'), {
+        zipLimits: RECOMMENDED_ZIP_LIMITS,
+        listOptions: { windowed: true, initialSlides: 3, batchSize: 3 },
+      });
     } catch (error) {
-      document.querySelector('#pptx-preview').innerHTML = '<p class="preview-error">This PPTX could not be rendered. Use DOWNLOAD ATTACHMENT to open the original file.</p>';
+      document.querySelector('#pptx-preview').innerHTML = `<p class="preview-error">This PPTX could not be rendered in the browser. Use DOWNLOAD ATTACHMENT to open the original file.</p>`;
       console.error('Failed to render PPTX preview', error);
     }
   }

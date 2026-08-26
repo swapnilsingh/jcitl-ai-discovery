@@ -56,10 +56,8 @@ h1 em { color: var(--red); font-style: normal; }
 .file-preview { border: 1px solid #363636; background: #111; padding: 14px; margin-top: 18px; }
 .file-preview iframe { display: block; width: 100%; height: 520px; border: 0; margin: 14px 0; background: white; }
 .pptx-preview { width: 100%; min-height: 360px; overflow: auto; margin: 14px 0; background: #222; }
-.pptx-preview .pptx-preview-wrapper { width: 100% !important; height: auto !important; min-height: 360px; overflow: auto; }
-.pptx-preview .pptx-preview-slide-wrapper { max-width: 100%; margin-bottom: 14px !important; }
-.pptx-preview .pptx-preview-slide-wrapper > div { max-width: 100%; }
-.pptx-preview svg, .pptx-preview img { max-width: 100%; }
+.pptx-preview > * { max-width: 100%; }
+.pptx-preview svg, .pptx-preview img, .pptx-preview canvas { max-width: 100%; height: auto; }
 .preview-error { color: #e31317 !important; padding: 30px 12px; }
 .file-preview p { color: #aaa; font-size: 12px; margin: 22px 0; }
 .download-link { display: inline-block; color: var(--gold); font: 10px 'DM Mono', monospace; letter-spacing: .08em; text-decoration: none; }
