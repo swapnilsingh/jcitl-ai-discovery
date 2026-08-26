@@ -7,6 +7,55 @@ const uploadZone = document.querySelector('.upload-zone');
 const uploadLabel = document.querySelector('#upload-label');
 const form = document.querySelector('#discovery-form');
 const message = document.querySelector('#form-message');
+const signInPanel = document.querySelector('#sign-in-panel');
+const protectedContent = document.querySelector('#protected-content');
+const clerkUserButton = document.querySelector('#clerk-user-button');
+const clerkSignIn = document.querySelector('#clerk-sign-in');
+const authLoading = document.querySelector('#auth-loading');
+const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
+
+async function startClerk() {
+  if (!clerkKey || !window.Clerk) {
+    authLoading.textContent = 'Secure sign-in is unavailable.';
+    return;
+  }
+
+  const redirectUrl = window.location.origin + '/';
+  await window.Clerk.load({
+    publishableKey: clerkKey,
+    ui: { ClerkUI: window.__internal_ClerkUICtor },
+    signInFallbackRedirectUrl: redirectUrl,
+    signInForceRedirectUrl: redirectUrl,
+    signUpFallbackRedirectUrl: redirectUrl,
+    signUpForceRedirectUrl: redirectUrl,
+    afterSignOutUrl: redirectUrl,
+  });
+
+  const renderAuthState = ({ user }) => {
+    const signedIn = Boolean(user || window.Clerk.session || window.Clerk.isSignedIn);
+    authLoading.hidden = true;
+    signInPanel.hidden = signedIn;
+    protectedContent.hidden = !signedIn;
+    if (signedIn) {
+      if (!clerkUserButton.hasChildNodes()) {
+        window.Clerk.mountUserButton(clerkUserButton, { afterSignOutUrl: redirectUrl });
+      }
+    } else if (!clerkSignIn.hasChildNodes()) {
+      window.Clerk.mountSignIn(clerkSignIn, {
+        routing: 'hash',
+        fallbackRedirectUrl: redirectUrl,
+        forceRedirectUrl: redirectUrl,
+      });
+    }
+  };
+
+  window.Clerk.addListener(renderAuthState);
+  renderAuthState({ user: window.Clerk.user });
+}
+
+startClerk().catch(() => {
+  authLoading.textContent = 'Secure sign-in could not be loaded.';
+});
 
 contextField.addEventListener('input', () => {
   charCount.textContent = contextField.value.length;
