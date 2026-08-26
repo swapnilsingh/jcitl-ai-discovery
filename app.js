@@ -12,7 +12,24 @@ const protectedContent = document.querySelector('#protected-content');
 const clerkUserButton = document.querySelector('#clerk-user-button');
 const clerkSignIn = document.querySelector('#clerk-sign-in');
 const authLoading = document.querySelector('#auth-loading');
+const analystContent = document.querySelector('#analyst-content');
+const briefCount = document.querySelector('#brief-count');
+const briefList = document.querySelector('#brief-list');
+const analystMessage = document.querySelector('#analyst-message');
 const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
+
+const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+
+async function renderAnalystView() {
+  const token = await window.Clerk.session?.getToken();
+  const response = await fetch('/api/analyst/briefs', { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('Could not load analyst briefs.');
+  const { briefs } = await response.json();
+  briefCount.textContent = briefs.length;
+  briefList.innerHTML = briefs.length
+    ? briefs.map((brief) => `<article class="brief-item"><div><strong>${escapeHtml(brief.company_name || 'Unnamed company')}</strong><span>${escapeHtml(brief.user_email || 'No email')}</span></div><p>${escapeHtml(brief.context)}</p><small>${escapeHtml(brief.stage)}</small></article>`).join('')
+    : '<p class="empty-state">No discovery briefs submitted yet.</p>';
+}
 
 async function startClerk() {
   if (!clerkKey || !window.Clerk) {
@@ -36,10 +53,23 @@ async function startClerk() {
     authLoading.hidden = true;
     signInPanel.hidden = signedIn;
     protectedContent.hidden = !signedIn;
+    analystContent.hidden = true;
     if (signedIn) {
       if (!clerkUserButton.hasChildNodes()) {
         window.Clerk.mountUserButton(clerkUserButton, { afterSignOutUrl: redirectUrl });
       }
+      window.Clerk.session.getToken().then(async (token) => {
+        const response = await fetch('/api/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) throw new Error('Could not determine account access.');
+        const { isAnalyst } = await response.json();
+        if (isAnalyst) {
+          protectedContent.hidden = true;
+          analystContent.hidden = false;
+          await renderAnalystView();
+        }
+      }).catch((error) => {
+        analystMessage.textContent = error.message;
+      });
     } else if (!clerkSignIn.hasChildNodes()) {
       window.Clerk.mountSignIn(clerkSignIn, {
         routing: 'hash',
