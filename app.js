@@ -82,9 +82,14 @@ async function previewBriefFile(briefId, fileName, fileType) {
   filePreview.innerHTML = `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div>${fileType === 'application/pdf' ? `<iframe title="${escapeHtml(fileName)}" src="${fileUrl}"></iframe>` : isPptx ? '<div id="pptx-preview" class="pptx-preview"></div>' : '<p>This file type cannot be previewed in the browser.</p>'}<a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`;
   filePreview.hidden = false;
   if (isPptx) {
-    const { init } = await import('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/+esm');
-    const previewer = init(document.querySelector('#pptx-preview'), { width: 960, height: 540 });
-    await previewer.preview(await blob.arrayBuffer());
+    try {
+      const { init } = await import('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/+esm');
+      const previewer = init(document.querySelector('#pptx-preview'), { width: 960, height: 540, mode: 'slide' });
+      await previewer.preview(await blob.arrayBuffer());
+    } catch (error) {
+      document.querySelector('#pptx-preview').innerHTML = '<p class="preview-error">This PPTX could not be rendered. Use DOWNLOAD ATTACHMENT to open the original file.</p>';
+      console.error('Failed to render PPTX preview', error);
+    }
   }
   document.querySelector('#close-preview').addEventListener('click', () => { filePreview.hidden = true; URL.revokeObjectURL(fileUrl); });
 }
