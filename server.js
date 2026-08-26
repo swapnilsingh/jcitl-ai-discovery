@@ -108,12 +108,13 @@ async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
   const sender = String(from || '').trim();
   const fallbackSender = String(fallbackFrom || '').trim();
   const replyToAddress = String(replyTo || '').trim();
+  const initialSender = sender || fallbackSender;
 
-  if (!emailConfig.apiKey || !sender || recipients.length === 0) {
+  if (!emailConfig.apiKey || !initialSender || recipients.length === 0) {
     console.warn('Email notification skipped: configure RESEND_API_KEY and sender/recipient settings in database records.');
     return;
   }
-  const payload = { from: sender, to: recipients, subject, html };
+  const payload = { from: initialSender, to: recipients, subject, html };
   if (replyToAddress) payload.reply_to = replyToAddress;
 
   let response = await fetch('https://api.resend.com/emails', {
@@ -121,7 +122,7 @@ async function sendEmail({ to, from, fallbackFrom, replyTo, subject, html }) {
     headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok && fallbackSender && fallbackSender !== sender) {
+  if (!response.ok && sender && fallbackSender && fallbackSender !== sender) {
     const fallbackPayload = { ...payload, from: fallbackSender };
     response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
