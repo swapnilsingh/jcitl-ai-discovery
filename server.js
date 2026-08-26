@@ -85,6 +85,29 @@ app.get('/api/me', requireAuth, async (request, response) => {
   response.json({ isAnalyst: await isAnalyst(request.auth) });
 });
 
+app.get('/api/discovery-status', requireAuth, async (request, response) => {
+  try {
+    const [status] = await sql`
+      SELECT b.id, b.review_status, q.id AS questionnaire_id, q.status AS questionnaire_status
+      FROM discovery_briefs b
+      LEFT JOIN LATERAL (
+        SELECT id, status
+        FROM questionnaires
+        WHERE brief_id = b.id
+        ORDER BY prepared_at DESC
+        LIMIT 1
+      ) q ON true
+      WHERE b.clerk_user_id = ${request.auth.sub}
+      ORDER BY b.created_at DESC
+      LIMIT 1
+    `;
+    response.json({ status: status || null });
+  } catch (error) {
+    console.error('Failed to load discovery status', error);
+    response.status(500).json({ error: 'We could not load your discovery status.' });
+  }
+});
+
 app.get('/api/analyst/briefs', requireAuth, async (request, response) => {
   if (!(await isAnalyst(request.auth))) {
     return response.status(403).json({ error: 'Analyst access required.' });

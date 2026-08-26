@@ -27,9 +27,18 @@ const questionnaireBuilderTitle = document.querySelector('#questionnaire-builder
 const questionBuilderList = document.querySelector('#question-builder-list');
 const questionnaireBuilderMessage = document.querySelector('#questionnaire-builder-message');
 const addQuestion = document.querySelector('#add-question');
+const progressBar = document.querySelector('.progress-track span');
+const progressLabels = document.querySelectorAll('[data-progress-step]');
+const stepLabelText = document.querySelector('#step-label-text');
 const clerkKey = document.querySelector('meta[name="clerk-publishable-key"]')?.content;
 
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+
+function setProgress(step, label) {
+  progressBar.style.width = `${(step / 3) * 100}%`;
+  stepLabelText.textContent = label;
+  progressLabels.forEach((item) => item.classList.toggle('active', Number(item.dataset.progressStep) <= step));
+}
 
 async function renderAnalystView() {
   const token = await window.Clerk.session?.getToken();
@@ -73,6 +82,24 @@ async function renderUserQuestionnaire() {
   questionnaireTitle.innerHTML = `${escapeHtml(current.title)}<br /><span>for your venture.</span>`;
   questionnaireForm.dataset.questionnaireId = current.id;
   questionnaireForm.innerHTML = current.questions.map((question) => `<div class="field-block"><label class="field-label">${escapeHtml(question.prompt)}</label>${question.type === 'textarea' ? `<textarea data-question-id="${escapeHtml(question.id)}" required></textarea>` : `<input type="text" data-question-id="${escapeHtml(question.id)}" required />`}</div>`).join('') + '<button class="primary-button" type="submit">SUBMIT ANSWERS <span>→</span></button>';
+  setProgress(3, 'FOLLOW-UP QUESTIONS');
+}
+
+async function renderUserDiscoveryState() {
+  const token = await window.Clerk.session?.getToken();
+  if (!token) return;
+  const response = await fetch('/api/discovery-status', { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error('Could not load your discovery status.');
+  const { status } = await response.json();
+  if (status?.questionnaire_status === 'prepared') {
+    await renderUserQuestionnaire();
+    return;
+  }
+  if (status) {
+    protectedContent.hidden = true;
+    confirmationContent.hidden = false;
+    setProgress(2, 'ANALYST REVIEW');
+  }
 }
 
 async function startClerk() {
@@ -113,7 +140,7 @@ async function startClerk() {
           analystContent.hidden = false;
           await renderAnalystView();
         } else {
-          await renderUserQuestionnaire();
+          await renderUserDiscoveryState();
         }
       }).catch((error) => {
         analystMessage.textContent = error.message;
@@ -194,7 +221,7 @@ form.addEventListener('submit', async (event) => {
     if (!response.ok) throw new Error(result.error || 'We could not save your brief.');
     protectedContent.hidden = true;
     confirmationContent.hidden = false;
-    document.querySelector('.progress-track span').style.width = '66.66%';
+    setProgress(2, 'ANALYST REVIEW');
   } catch (error) {
     message.textContent = error.message;
   }
