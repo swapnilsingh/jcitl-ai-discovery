@@ -21,7 +21,6 @@ const analystRoleCache = new Set();
 const LOCK_MINUTES = 10;
 const emailConfig = {
   apiKey: process.env.RESEND_API_KEY,
-  from: process.env.EMAIL_FROM,
 };
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -102,19 +101,20 @@ async function requireAnalyst(request, response, next) {
   return next();
 }
 
-async function sendEmail(to, subject, html) {
+async function sendEmail({ to, from, subject, html }) {
   const recipients = Array.isArray(to)
     ? [...new Set(to.map((item) => String(item || '').trim()).filter(Boolean))]
     : [String(to || '').trim()].filter(Boolean);
+  const sender = String(from || '').trim();
 
-  if (!emailConfig.apiKey || !emailConfig.from || recipients.length === 0) {
-    console.warn('Email notification skipped: configure RESEND_API_KEY, EMAIL_FROM, and recipient settings.');
+  if (!emailConfig.apiKey || !sender || recipients.length === 0) {
+    console.warn('Email notification skipped: configure RESEND_API_KEY and sender/recipient settings in database records.');
     return;
   }
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${emailConfig.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: emailConfig.from, to: recipients, subject, html }),
+    body: JSON.stringify({ from: sender, to: recipients, subject, html }),
   });
   if (!response.ok) throw new Error(`Email provider returned ${response.status}`);
 }
@@ -367,6 +367,12 @@ app.post('/api/analyst/questionnaires', requireAuth, requireAnalyst, async (requ
   try {
     const [brief] = await sql`SELECT clerk_user_id, user_email, user_name FROM discovery_briefs WHERE id = ${briefId}`;
     if (!brief) return response.status(404).json({ error: 'Discovery brief not found.' });
+    const [analystUser] = await sql`
+      SELECT user_email
+      FROM analyst_users
+      WHERE clerk_user_id = ${request.auth.sub} AND is_active = true
+      LIMIT 1
+    `;
     const [activeLock] = await sql`
       SELECT analyst_clerk_user_id
       FROM brief_locks
@@ -382,7 +388,12 @@ app.post('/api/analyst/questionnaires', requireAuth, requireAnalyst, async (requ
       RETURNING id, title, status, prepared_at
     `;
     if (status === 'prepared') {
-      await sendEmail(brief.user_email, 'Your JCiTL follow-up questionnaire is ready', `<p>Hello ${brief.user_name || 'there'},</p><p>Your follow-up questionnaire is ready. Sign in to JCiTL Discovery Studio to complete it.</p>`);
+      await sendEmail({
+        to: brief.user_email,
+        from: analystUser?.user_email,
+        subject: 'Your JCiTL follow-up questionnaire is ready',
+        html: `<p>Hello ${brief.user_name || 'there'},</p><p>Your follow-up questionnaire is ready. Sign in to JCiTL Discovery Studio to complete it.</p>`,
+      });
     }
     return response.status(201).json({ questionnaire });
   } catch (error) {
@@ -422,17 +433,24 @@ app.post('/api/questionnaires/:id/submit', requireAuth, async (request, response
       UPDATE questionnaires SET answers = ${JSON.stringify(answers)}::jsonb, status = 'submitted', submitted_at = now()
       WHERE id = ${request.params.id} RETURNING id, brief_id
     `;
+    const [submitter] = await sql`
+      SELECT user_email
+      FROM discovery_briefs
+      WHERE id = ${submitted.brief_id}
+      LIMIT 1
+    `;
 
     const analystEmails = await sql`
       SELECT user_email
       FROM analyst_users
       WHERE is_active = true AND user_email IS NOT NULL
     `;
-    await sendEmail(
-      analystEmails.map((analyst) => analyst.user_email),
-      'A JCiTL questionnaire has been submitted',
-      `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
-    );
+    await sendEmail({
+      to: analystEmails.map((analyst) => analyst.user_email),
+      from: submitter?.user_email,
+      subject: 'A JCiTL questionnaire has been submitted',
+      html: `<p>A follow-up questionnaire for discovery brief #${submitted.brief_id} has been submitted and is ready for review.</p>`,
+    });
     response.json({ message: 'Your answers have been submitted. We will be in touch in due course.' });
   } catch (error) {
     console.error('Failed to submit questionnaire', error);
