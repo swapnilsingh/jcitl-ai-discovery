@@ -55,6 +55,8 @@ h1 em { color: var(--red); font-style: normal; }
 .no-attachment { color: #666; font: 9px 'DM Mono', monospace; letter-spacing: .08em; }
 .file-preview { border: 1px solid #363636; background: #111; padding: 14px; margin-top: 18px; }
 .file-preview iframe { display: block; width: 100%; height: 520px; border: 0; margin: 14px 0; background: white; }
+.pptx-preview { width: 100%; min-height: 360px; overflow: auto; margin: 14px 0; background: #222; }
+.pptx-preview canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .file-preview p { color: #aaa; font-size: 12px; margin: 22px 0; }
 .download-link { display: inline-block; color: var(--gold); font: 10px 'DM Mono', monospace; letter-spacing: .08em; text-decoration: none; }
 .empty-state { color: #898989; font-size: 13px; }

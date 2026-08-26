@@ -76,11 +76,16 @@ async function previewBriefFile(briefId, fileName, fileType) {
   const token = await window.Clerk.session?.getToken();
   const response = await fetch(`/api/analyst/briefs/${briefId}/file`, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) throw new Error('The attachment could not be loaded.');
-  const fileUrl = URL.createObjectURL(await response.blob());
-  filePreview.innerHTML = fileType === 'application/pdf'
-    ? `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div><iframe title="${escapeHtml(fileName)}" src="${fileUrl}"></iframe><a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`
-    : `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div><p>This file type cannot be previewed in the browser.</p><a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`;
+  const blob = await response.blob();
+  const fileUrl = URL.createObjectURL(blob);
+  const isPptx = fileType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || fileName.toLowerCase().endsWith('.pptx');
+  filePreview.innerHTML = `<div class="preview-heading"><strong>${escapeHtml(fileName)}</strong><button class="refresh-button" type="button" id="close-preview">CLOSE</button></div>${fileType === 'application/pdf' ? `<iframe title="${escapeHtml(fileName)}" src="${fileUrl}"></iframe>` : isPptx ? '<div id="pptx-preview" class="pptx-preview"></div>' : '<p>This file type cannot be previewed in the browser.</p>'}<a class="download-link" href="${fileUrl}" download="${escapeHtml(fileName)}">DOWNLOAD ATTACHMENT ↗</a>`;
   filePreview.hidden = false;
+  if (isPptx) {
+    const { init } = await import('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/+esm');
+    const previewer = init(document.querySelector('#pptx-preview'), { width: 960, height: 540 });
+    await previewer.preview(await blob.arrayBuffer());
+  }
   document.querySelector('#close-preview').addEventListener('click', () => { filePreview.hidden = true; URL.revokeObjectURL(fileUrl); });
 }
 
